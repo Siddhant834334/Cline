@@ -1,0 +1,4 @@
+[out:json][timeout:180];
+way["highway"]["area"!~"yes"]["highway"!~"motorway|motorway_link|trunk_link|construction|proposed|abandoned|platform|raceway"]["foot"!~"no"]["access"!~"private"](26.1795,91.6830,26.2010,91.7060);
+(._;>;);
+out body;

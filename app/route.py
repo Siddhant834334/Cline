@@ -67,7 +67,7 @@ def _key(net, n, c, g):
 
 def product_search(net, s, t, L, budget, objective="time"):
     tie = count()
-    start = (s, 0, 0)
+    start = (s, 0, 0, -1)
     best = {start: (0.0, 0.0)}
     parent = {start: (None, None)}
     heap = [((0.0, 0.0), next(tie), start, 0.0, 0.0, 0.0, 0.0)]
@@ -77,11 +77,13 @@ def product_search(net, s, t, L, budget, objective="time"):
         if key in settled:
             continue
         settled.add(key)
-        n = key[0]
+        n, prev_e = key[0], key[3]
         if n == t:
             nodes, edges = _rebuild(parent, key)
             return nodes, edges, tm
         for m, e in net.adj.get(n, ()):
+            if e == prev_e:
+                continue
             st = _step(net, c, g, e, L)
             if st is None:
                 continue
@@ -90,7 +92,7 @@ def product_search(net, s, t, L, budget, objective="time"):
             if tm2 > budget + 1e-6:
                 continue
             ex2 = ex + (seg["length_m"] if net.conc[e] else 0.0)
-            k2 = _key(net, m, *st)
+            k2 = _key(net, m, *st) + (e,)
             if k2 in settled:
                 continue
             p2 = (tm2, ex2) if objective == "time" else (ex2, tm2)
@@ -176,7 +178,7 @@ def plan(net, s, t, detour=config.DETOUR_FACTOR, l_cap=config.L_CAP_M):
     budget = ftime * detour
     fast = metrics(net, fnodes, fedges)
     fast.update(name="fastest", claim="exact fastest eligible")
-    hi = min(l_cap, math.ceil(fast["longest_stretch_m"] / net.delta - 1e-6) * net.delta)
+    hi = math.ceil(fast["longest_stretch_m"] / net.delta - 1e-6) * net.delta
     grid = [i * net.delta for i in range(int(round(hi / net.delta)) + 1)]
     lo_i, hi_i, best = 0, len(grid) - 1, None
     while lo_i <= hi_i:
@@ -186,12 +188,25 @@ def plan(net, s, t, detour=config.DETOUR_FACTOR, l_cap=config.L_CAP_M):
             best, hi_i = (grid[mid], r), mid - 1
         else:
             lo_i = mid + 1
+    relaxed_from = None
+    if best is not None and len(best[1][0]) != len(set(best[1][0])):
+        relaxed_from = best[0]
+        i = grid.index(best[0]) + 1
+        best = None
+        while i < len(grid):
+            r = product_search(net, s, t, grid[i], budget, "time")
+            if r is not None and len(r[0]) == len(set(r[0])):
+                best = (grid[i], r)
+                break
+            i += 1
     cards, l_star = [fast], None
     if best is not None:
         l_star, (cn, ce, _) = best
         calm = metrics(net, cn, ce)
-        calm.update(name="calmest", l_bound_m=l_star,
-                    claim=f"minimal longest continuous stretch within budget, to {net.delta:g} m buckets")
+        claim = f"minimal longest continuous stretch within budget, exact to {net.delta:g} m buckets"
+        if relaxed_from is not None:
+            claim = f"optimal walk revisited a node at bound {relaxed_from:g} m; next feasible simple route shown (not proven optimal)"
+        calm.update(name="calmest", l_bound_m=l_star, relaxed_from_m=relaxed_from, claim=claim)
         cards.append(calm)
         br = product_search(net, s, t, l_star, budget, "exposure")
         if br is not None:

@@ -16,6 +16,7 @@ DETOUR_FACTOR = 1.4
 WALK_SPEED_MPS = 1.25
 SPLIT_M = 30.0
 DEDUP_SHARE = 0.85
+CAMPUS_MEMBER_ACCESS = True
 
 FIELD_DIRECTION = {
     "lighting_level": -1, "activity_level": -1, "walkability": -1,
