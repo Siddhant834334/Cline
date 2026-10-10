@@ -3,6 +3,9 @@
 Walking routes on the **real IIT Guwahati road network** that minimise the *longest continuous concerning stretch*
 within a time budget. **Street conditions are synthetic.** Nothing here establishes real night-time safety.
 
+**Docs:** [Assumptions & acceptance checks](docs/ASSUMPTIONS.md) · [Decisions log](docs/DECISIONS.md) ·
+[Cline build log](docs/CLINE_LOG.md) · [How Cline was used](#how-cline-was-used)
+
 ## Run locally
 ```bash
 pip install -r requirements.txt
@@ -39,6 +42,60 @@ Live report extraction: set `ANTHROPIC_API_KEY`. Without it, the demo Hinglish s
 - Not implemented: anti-concentration, reporter reputation, outlier detection, automatic dead-lamp detection,
   loitering inference (removed permanently), native telemetry, bus/cab chains, exact exposure minimisation,
   any pilot or authority cooperation.
+
+## How Cline was used
+
+Full log: [`docs/CLINE_LOG.md`](docs/CLINE_LOG.md). Build spec departures and gaps Cline filled:
+[`docs/DECISIONS.md`](docs/DECISIONS.md).
+
+### In the build (block by block, from the log)
+- **Block 0:** scaffold, SQL schema (B1), config with the Part H parameters.
+- **Block 2:** scoring (C2) and the product-graph router (C3). Gate tests were written first: counterexample,
+  budget, subdivision, unreachable.
+- **Block 1:** Overpass/osmnx downloads failed from the sandbox (504s, resets). Cline switched to OSM main API tiles
+  plus its own graph builder, then wrote the seeded narrow-observation generator and catalog.
+- **Block 4:** report lifecycle (draft / accepted / verified / fixed / rejected, rollback), expiring events,
+  idempotency, live → replay → manual extraction, end-to-end loop test.
+- **Block 3:** Leaflet UI, segment drawer, reviewer portal, provenance page.
+
+### Who wrote what
+- **Written by Cline:** all backend code in `app/`, `tests/`, `scripts/`, `spikes/` and `app/agent_node/`, the
+  data pipeline, and the docs, as recorded in git (every code commit is authored by Cline).
+- **Directed or corrected by the team:** the build spec; pinning `pyproj`; measuring the first scenario and
+  requiring its restructuring; finding that bucket merging makes the Calmest bound an upper bound, not exact, and
+  rewording the claim; removing the unused `L_CAP_M`; turning the demo gate's 60% target into a 30% recorded
+  baseline; the "no calmer route is correct behaviour" decision; and re-running the SDK spike with a real key.
+  Cline implemented these changes as instructed.
+- **Frontend (`static/`):** written by hand by the team, who wire the UI. Cline was instructed not to modify it.
+  Note: the git history records the current files in `static/` as committed by Cline in Block 3 (`e3e4a36`).
+
+### Cline in the product: the ticket agent
+When a reviewer requests a ticket (`POST /api/review/ticket`), `app/ticket.py` runs `app/agent_node/index.mjs` as a
+subprocess. That is a Cline SDK `Agent` (`@cline/sdk` 0.0.92) with **zero tools**: no shell, filesystem or web
+access, just one JSON object on stdin and one on stdout. Its output is validated in Python against a strict schema.
+The `drafted_by` field names which tier produced each ticket:
+1. `"cline sdk agent (@cline/sdk 0.0.92)"`: the SDK agent succeeded and its output validated.
+2. `"cline-authored module (SDK integration not run)"`: the agent failed, timed out or returned invalid output, so
+   one direct LLM call was made instead.
+3. `"cline-authored module (SDK integration not run); LLM unavailable, deterministic template text"`: both failed,
+   so a deterministic English/Hindi template was built from database facts.
+
+Every ticket has `delivered: 0` and `disclosure: "demo outbox - not delivered to any authority"`.
+
+### Two real findings from the build
+- **Routes doubled back.** On the real IITG graph, the optimal product-graph walk often doubled back along an edge
+  to reset its stretch counter. Fixed by forbidding same-edge U-turns, plus a relaxation that, when the walk still
+  revisits a node, steps the bound up and labels the card "not proven optimal".
+- **`agent.run()` does not throw on failure.** It resolves with `status: "failed"`. A first version of the spike
+  read only `outputText` and wrongly reported success. The committed spike checks `status` and `error`.
+
+### The SDK spike
+`@cline/sdk` 0.0.92 (Node >= 22) installed in the build sandbox, but the trivial agent call failed with
+"Anthropic API key is missing": the sandbox has no key. The team re-ran `spikes/cline_sdk/spike.mjs` with a real
+`ANTHROPIC_API_KEY` and it returned `ok: true`. That pass was observed by the team and cannot be reproduced in the
+sandbox. Details in [`docs/CLINE_LOG.md`](docs/CLINE_LOG.md).
+
+---
 
 Parameters and acceptance-check status: [`docs/ASSUMPTIONS.md`](docs/ASSUMPTIONS.md). Every decision that departed from or filled gaps in the build spec: [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
