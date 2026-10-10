@@ -1,0 +1,67 @@
+{
+  "scenario_version": "v1",
+  "seed": 20251010,
+  "base_date": "2025-10-10",
+  "zones": {
+    "academic": {
+      "lighting_level": 0.85,
+      "activity_level": 0.6,
+      "walkability": 0.8,
+      "sightline_depth": 0.7,
+      "open_poi_distance": 0.3,
+      "dog_report_risk": 0.2,
+      "waterlogging": 0.1
+    },
+    "hostel": {
+      "lighting_level": 0.8,
+      "activity_level": 0.8,
+      "walkability": 0.7,
+      "sightline_depth": 0.6,
+      "open_poi_distance": 0.2,
+      "dog_report_risk": 0.3,
+      "waterlogging": 0.1
+    },
+    "residential": {
+      "lighting_level": 0.7,
+      "activity_level": 0.55,
+      "walkability": 0.6,
+      "sightline_depth": 0.5,
+      "open_poi_distance": 0.5,
+      "dog_report_risk": 0.4,
+      "waterlogging": 0.2
+    },
+    "periphery": {
+      "lighting_level": 0.45,
+      "activity_level": 0.3,
+      "walkability": 0.4,
+      "sightline_depth": 0.3,
+      "open_poi_distance": 0.8,
+      "dog_report_risk": 0.6,
+      "waterlogging": 0.35
+    },
+    "lakeside": {
+      "lighting_level": 0.5,
+      "activity_level": 0.4,
+      "walkability": 0.5,
+      "sightline_depth": 0.4,
+      "open_poi_distance": 0.7,
+      "dog_report_risk": 0.5,
+      "waterlogging": 0.5
+    }
+  },
+  "zone_cells": 6,
+  "noise": 0.12,
+  "late_night_decay": {
+    "lighting_level": 0.05,
+    "activity_level": 0.35,
+    "open_poi_distance": -0.4
+  },
+  "missing_field_rate": 0.08,
+  "all_missing_rate": 0.02,
+  "stale_rate": 0.1,
+  "stale_hours": [
+    14,
+    30
+  ],
+  "contradictory_report_rate": 0.01
+}

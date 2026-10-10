@@ -1,0 +1,29 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Fear-Free Night Navigator</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="/style.css">
+</head><body>
+<header>
+  <b>Fear-Free Night Navigator</b>
+  <span class="badge warn">SIMULATED CONDITIONS</span>
+  <span class="badge">DEPARTURE-TIME SNAPSHOT</span>
+  <span id="params" class="muted"></span>
+  <nav><a href="/portal">Reviewer portal</a> · <a href="/provenance">Provenance</a></nav>
+</header>
+<main>
+  <aside id="side">
+    <p class="muted">Click the map to set <b>start</b>, then <b>end</b>. Click any road to inspect it or report a problem.</p>
+    <label>Departure <span id="hourv"></span><input id="hour" type="range" min="18" max="29" value="22"></label>
+    <label>Detour budget ×<span id="detv"></span><input id="detour" type="range" min="1.0" max="2.0" step="0.1" value="1.4"></label>
+    <button id="go">Find routes</button> <button id="reset" class="sec">Reset</button>
+    <div id="status" class="muted"></div>
+    <div id="cards"></div>
+    <div id="drawer" hidden></div>
+  </aside>
+  <div id="map"></div>
+</main>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/map.js"></script>
+<script src="/report.js"></script>
+</body></html>
