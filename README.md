@@ -14,7 +14,7 @@ uvicorn app.main:app --port 8000
 pytest -q
 ```
 
-Optional: `python -m app.osm_build` rebuilds the geography (`data/iitg.graphml`, `data/segments.json`) from the
+Optional: `pip install -r requirements-osm.txt`, then `python -m app.osm_build` rebuilds the geography (`data/iitg.graphml`, `data/segments.json`) from the
 raw OSM tiles in `data/osm_tiles/`. Both outputs are committed, so this is only needed if you change the tiles or the
 walkability filter. Re-run `python -m app.generate` afterwards.
 
@@ -66,8 +66,8 @@ Full log: [`docs/CLINE_LOG.md`](docs/CLINE_LOG.md). Build spec departures and ga
   rewording the claim; removing the unused `L_CAP_M`; turning the demo gate's 60% target into a 30% recorded
   baseline; the "no calmer route is correct behaviour" decision; and re-running the SDK spike with a real key.
   Cline implemented these changes as instructed.
-- **Frontend (`static/`):** written by hand by the team, who wire the UI. Cline was instructed not to modify it.
-  Note: the git history records the current files in `static/` as committed by Cline in Block 3 (`e3e4a36`).
+- **Frontend (`static/`):** Cline wrote the initial static/ files in Block 3; the team has maintained them by hand
+  since, and Cline was instructed not to modify them during the fix round.
 
 ### Cline in the product: the ticket agent
 When a reviewer requests a ticket (`POST /api/review/ticket`), `app/ticket.py` runs `app/agent_node/index.mjs` as a
