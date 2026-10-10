@@ -6,11 +6,15 @@ within a time budget. **Street conditions are synthetic.** Nothing here establis
 ## Run locally
 ```bash
 pip install -r requirements.txt
-python -m app.osm_build      # builds data/iitg.graphml + data/segments.json from data/osm_tiles/
 python -m app.generate       # seeded synthetic observations into data/fnn.db
 uvicorn app.main:app --port 8000
 pytest -q
 ```
+
+Optional: `python -m app.osm_build` rebuilds the geography (`data/iitg.graphml`, `data/segments.json`) from the
+raw OSM tiles in `data/osm_tiles/`. Both outputs are committed, so this is only needed if you change the tiles or the
+walkability filter. Re-run `python -m app.generate` afterwards.
+
 - http://localhost:8000: map. Click start, then end. Click any road for its per-field drawer and to report a problem.
 - `/portal`: reviewer portal. Token from `FNN_REVIEWER_TOKEN` (default `demo-reviewer-token`). **Demo auth only.**
 - `/provenance`: dependency ledger. The actual source of every v1 condition value is `synthetic_generator`.
