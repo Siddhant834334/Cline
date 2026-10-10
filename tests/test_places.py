@@ -136,3 +136,21 @@ def test_google_request_sends_key_in_header_and_campus_rectangle(monkeypatch):
     assert rect["low"] == {"latitude": 26.1795, "longitude": 91.6830}
     assert rect["high"] == {"latitude": 26.2010, "longitude": 91.7060}
     assert "places.location" in req.get_header("X-goog-fieldmask")
+
+
+def test_route_returns_straight_line_and_road_access_distances():
+    from app import main
+    c = TestClient(main.app)
+    a, b = [26.1871278, 91.6887413], [26.1870157, 91.6957447]
+    r = c.post("/api/route", json={"start": a, "end": b, "hour": 22}).json()
+    d = r["distances"]
+    assert 690 < d["straight_line_m"] < 710
+    assert d["start_to_road_m"] >= 0 and d["end_to_road_m"] >= 0
+    assert all(card["length_m"] >= d["straight_line_m"] - d["start_to_road_m"] - d["end_to_road_m"] for card in r["cards"])
+
+
+def test_frontend_uses_places_api_not_hardcoded_list():
+    from app import config
+    js = (config.ROOT / "static" / "map.js").read_text()
+    assert "/api/places" in js and "/api/places/search" in js
+    assert "lat: 26.1862, lng: 91.6938" not in js

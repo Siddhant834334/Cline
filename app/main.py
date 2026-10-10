@@ -94,6 +94,11 @@ def route(req: RouteReq):
     net, res = plan_with_reasons(con, SEGMENTS, dep, s, t, req.detour)
     res["cards"] = [_card(net, c) for c in res["cards"]]
     res.update(departure=dep.isoformat(), snapshot="departure-time snapshot", conditions="simulated")
+    a, b = _snap(req.start[0], req.start[1]), _snap(req.end[0], req.end[1])
+    res["distances"] = {
+        "straight_line_m": round(_metres(req.start[0], req.start[1], req.end[0], req.end[1]), 1),
+        "start_to_road_m": a["distance_m"], "end_to_road_m": b["distance_m"],
+    }
     return res
 
 
@@ -189,13 +194,18 @@ def review_ticket(req: TicketReq, authorization: str = Header(None)):
                                                {s["segment_id"]: s for s in SEGMENTS}))
 
 
-def _snap(lat, lon):
+def _metres(la1, lo1, la2, lo2):
     import math
+    p1, p2 = math.radians(la1), math.radians(la2)
+    h = math.sin((p2 - p1) / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(math.radians(lo2 - lo1) / 2) ** 2
+    return 2 * 6371008.8 * math.asin(math.sqrt(h))
+
+
+def _snap(lat, lon):
     from .graph import node_coords
     n = nearest_node(SEGMENTS, lat, lon, MAIN_COMPONENT)
     la, lo = node_coords(SEGMENTS)[n]
-    d = math.hypot((la - lat) * 111320, (lo - lon) * 111320 * math.cos(math.radians(lat)))
-    return {"lat": la, "lon": lo, "distance_m": round(d, 1)}
+    return {"lat": la, "lon": lo, "distance_m": round(_metres(lat, lon, la, lo), 1)}
 
 
 @app.get("/api/places/search")
