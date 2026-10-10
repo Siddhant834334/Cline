@@ -1,15 +1,48 @@
 import json
+import shutil
+import subprocess
 import uuid
 from datetime import datetime
 from . import config
 from .extract import ValidationError
 from .ticket_text import validate_bodies, llm_bodies, template_bodies
 
+AGENT_DRAFTED_BY = "cline sdk agent (@cline/sdk 0.0.92)"
 DRAFTED_BY = "cline-authored module (SDK integration not run)"
+AGENT_DIR = config.ROOT / "app" / "agent_node"
+AGENT_TIMEOUT_S = 30
 TEMPLATE_SUFFIX = "; LLM unavailable, deterministic template text"
 DISCLOSURE = "demo outbox - not delivered to any authority"
 OUTBOX = config.DATA / "outbox"
 LLM = llm_bodies
+
+
+class AgentError(Exception):
+    pass
+
+
+def run_agent(facts, timeout=None):
+    node = shutil.which("node")
+    entry = AGENT_DIR / "index.mjs"
+    if not node or not entry.exists() or not (AGENT_DIR / "node_modules" / "@cline" / "sdk").exists():
+        raise AgentError("agent_unavailable")
+    try:
+        proc = subprocess.run([node, str(entry)], input=json.dumps(facts, ensure_ascii=False), capture_output=True,
+                              text=True, timeout=timeout or AGENT_TIMEOUT_S, cwd=str(AGENT_DIR), shell=False)
+    except subprocess.TimeoutExpired:
+        raise AgentError("agent_timeout")
+    if proc.returncode != 0:
+        raise AgentError(f"agent_exit_{proc.returncode}")
+    lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
+    if len(lines) != 1:
+        raise AgentError("agent_stdout_not_one_object")
+    try:
+        return json.loads(lines[0])
+    except ValueError:
+        raise AgentError("agent_stdout_not_json")
+
+
+AGENT = run_agent
 
 
 def affected_route_count(segment_ids, route_segment_lists):
@@ -61,18 +94,23 @@ def _ticket(row):
 
 
 def draft_ticket(con, report_id, route_segment_lists=(), segments_by_id=None, llm=None, now=None,
-                 outbox=None):
+                 outbox=None, agent=None):
     llm = llm or LLM
+    agent = agent or AGENT
     existing = con.execute("SELECT * FROM ticket WHERE report_id=?", (report_id,)).fetchone()
     if existing:
         return _ticket(existing)
     facts = gather(con, report_id, route_segment_lists, segments_by_id, now)
-    drafted_by = DRAFTED_BY
     try:
-        bodies = validate_bodies(llm(facts))
+        bodies = validate_bodies(agent(facts))
+        drafted_by = AGENT_DRAFTED_BY
     except Exception:
-        bodies = validate_bodies(template_bodies(facts))
-        drafted_by = DRAFTED_BY + TEMPLATE_SUFFIX
+        drafted_by = DRAFTED_BY
+        try:
+            bodies = validate_bodies(llm(facts))
+        except Exception:
+            bodies = validate_bodies(template_bodies(facts))
+            drafted_by = DRAFTED_BY + TEMPLATE_SUFFIX
     con.execute("INSERT OR IGNORE INTO ticket VALUES (?,?,?,?,?,?,?,0,?)",
                 ("T-" + uuid.uuid4().hex[:8], report_id, facts["event_id"], bodies["body_en"], bodies["body_hi"],
                  drafted_by, datetime.now().replace(microsecond=0).isoformat(),

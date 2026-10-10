@@ -22,6 +22,15 @@ Built with Cline on branch `cline/xcmt1nh7`.
   provider call.
 - Note: `agent.run()` resolves, it does not throw, on failure. A first version of the script read only `outputText`
   and wrongly printed `ok: true`. The committed script checks `status` and `error`.
-- Decision: the spike did not pass, so per the spec the ticket flow is built in **fallback mode** (one direct LLM
-  call, `drafted_by: "cline-authored module (SDK integration not run)"`). No `app/agent_node/` was created.
+- Decision at the time: the spike did not pass, so the ticket flow was first built in fallback mode (one direct LLM
+  call, `drafted_by: "cline-authored module (SDK integration not run)"`).
+
+### Re-run: PASSED (team, with a real key)
+
+- The team re-ran `spikes/cline_sdk/spike.mjs` with a real `ANTHROPIC_API_KEY` and it returned `ok: true`. That script
+  checks `status` and `error`, not just `outputText`, so `ok: true` means a completed model call.
+- This pass was observed by the team, not in the Cline build sandbox, which still has no API key. The sandbox result
+  above is unchanged and remains a fail.
+- Consequence: ticket drafting moved out of fallback mode. `app/agent_node/index.mjs` runs a Cline SDK `Agent` with
+  zero tools; `app/ticket.py` calls it as a subprocess. See `DECISIONS.md` section 21.
 - To retry: `cd spikes/cline_sdk && npm install && ANTHROPIC_API_KEY=... node spike.mjs` (exit 0 = pass).
