@@ -6,3 +6,4 @@ data/photos/
 .pytest_cache/
 .env
 data/osm_cache/
+data/outbox/

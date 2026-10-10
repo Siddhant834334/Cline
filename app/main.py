@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException, Header
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from . import config, db, reports
+from . import config, db, reports, ticket
 from .conditions import build_net, segment_detail, scenario_departure, plan_with_reasons
 from .extract import ValidationError
 from .graph import load_segments, nearest_node, components
@@ -162,6 +162,39 @@ def review_reject(req: ReviewReq, authorization: str = Header(None)):
 def review_rollback(req: RollbackReq, authorization: str = Header(None)):
     auth(authorization)
     return guarded(lambda: reports.rollback(con, req.event_id, "demo_reviewer") or {"ok": True})
+
+
+class TicketReq(BaseModel):
+    report_id: str
+
+
+def demo_route_segments():
+    path = config.DATA / "demo_pairs.json"
+    if not path.exists():
+        return []
+    out = []
+    for p in json.loads(path.read_text()):
+        dep = depart_at(p["hour"])
+        s = nearest_node(SEGMENTS, p["start"][0], p["start"][1], MAIN_COMPONENT)
+        t = nearest_node(SEGMENTS, p["end"][0], p["end"][1], MAIN_COMPONENT)
+        _, res = plan_with_reasons(con, SEGMENTS, dep, s, t)
+        out.extend(c["segment_ids"] for c in res["cards"])
+    return out
+
+
+@app.post("/api/review/ticket")
+def review_ticket(req: TicketReq, authorization: str = Header(None)):
+    auth(authorization)
+    return guarded(lambda: ticket.draft_ticket(con, req.report_id, demo_route_segments(),
+                                               {s["segment_id"]: s for s in SEGMENTS}))
+
+
+@app.get("/api/demo_pairs")
+def demo_pairs():
+    path = config.DATA / "demo_pairs.json"
+    if not path.exists():
+        raise HTTPException(404, "data/demo_pairs.json missing; run scripts/demo_gate.py")
+    return json.loads(path.read_text())
 
 
 @app.get("/api/provenance")

@@ -28,3 +28,8 @@ CREATE TABLE IF NOT EXISTS report(
   extracted_json TEXT, extraction_confidence REAL, extraction_mode TEXT,
   state TEXT,
   submitted_at TEXT, reviewed_by TEXT, reviewed_at TEXT, linked_event_id TEXT);
+CREATE TABLE IF NOT EXISTS ticket(
+  ticket_id TEXT PRIMARY KEY, report_id TEXT UNIQUE, event_id TEXT,
+  body_en TEXT, body_hi TEXT, drafted_by TEXT, created_at TEXT,
+  delivered INTEGER NOT NULL DEFAULT 0 CHECK (delivered = 0),
+  facts_json TEXT);
