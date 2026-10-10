@@ -83,6 +83,7 @@ body, button, input, select, textarea { font-family: var(--sans); }
 .brand-mode, .step-bars { display: none !important; }
 .step-label { font-size: 15px; line-height: 1.55; }
 .ping-core, .ping-ring { background: var(--text-2) !important; }
+.ping-ring { animation: none !important; opacity: 0; }
 
 .badges { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .badge {
