@@ -1,1 +1,17 @@
-<html>placeholder</html>
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Provenance · FFNN</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+<header><b>Data provenance &amp; dependency ledger</b> <span class="badge warn">ACTUAL SOURCE OF EVERY v1 CONDITION VALUE: synthetic_generator</span>
+<nav><a href="/">Map</a> · <a href="/portal">Portal</a></nav></header>
+<div class="portal">
+<p>This table lists <b>proposed future</b> collection methods, not current sources. Tier says whether a method is a measurement or only a proxy.
+Design filter (our choice, not a proof): no v1 layer may depend on institutional access. The automated check verifies the catalog's consistency only; it does not validate access, consent, site rules or licensing.</p>
+<table id="t"></table>
+<p class="muted">Geography: OpenStreetMap contributors (ODbL). Road network is real; street conditions are simulated.</p>
+</div>
+<script>
+fetch("/api/provenance").then((r) => r.json()).then((d) => {
+  document.getElementById("t").innerHTML = "<tr><th>field</th><th>proposed future method</th><th>tier</th><th>permission</th><th>validation required</th><th>status</th></tr>" +
+    d.catalog.map((r) => `<tr><td>${r.field}</td><td>${r.proposed_method}</td><td><b>${r.kind}</b></td><td>${r.permission_class}</td><td>${r.validation_needed}</td><td>${r.dependency_status}</td></tr>`).join("");
+});
+</script></body></html>

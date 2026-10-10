@@ -1,1 +1,47 @@
-<html>placeholder</html>
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Reviewer portal · FFNN</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+<header><b>Reviewer portal</b> <span class="badge warn">DEMO AUTH (bearer token)</span>
+<span class="badge">accepted ≠ verified ≠ fixed</span>
+<nav><a href="/">Map</a> · <a href="/provenance">Provenance</a></nav></header>
+<div class="portal">
+<label>Reviewer token <input id="tok" type="text" style="width:260px"></label>
+<label>Event effective at hour <input id="hr" type="number" min="0" max="23" value="21" style="width:60px"> <span class="muted">(scenario clock; events expire at query time)</span></label>
+<button id="load">Load</button> <span id="msg" class="muted"></span>
+<h3>Reports</h3><table id="reports"></table>
+<h3>Condition events</h3><table id="events"></table>
+<p class="muted">Nothing a user submits changes routing until verified here. Verified means a reviewer accepted the report; it does not mean the problem is fixed. Fixed requires a separate repair event.</p>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+$("tok").value = localStorage.fnnTok || "";
+async function call(path, body) {
+  localStorage.fnnTok = $("tok").value;
+  const r = await fetch(path, { method: body ? "POST" : "GET", headers: { "content-type": "application/json",
+    authorization: "Bearer " + $("tok").value }, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json(); if (!r.ok) throw new Error(j.detail || r.status); return j;
+}
+async function act(kind, body) {
+  try { const r = await call("/api/review/" + kind, body); $("msg").textContent = kind + " ok " + JSON.stringify(r); load(); }
+  catch (e) { $("msg").textContent = "Error: " + e.message; }
+}
+async function load() {
+  let d; try { d = await call("/api/review/reports"); } catch (e) { $("msg").textContent = "Error: " + e.message; return; }
+  const hr = +$("hr").value;
+  $("reports").innerHTML = "<tr><th>id</th><th>state</th><th>category</th><th>original text</th><th>segment</th><th>reports on segment</th><th>extraction</th><th>submitted</th><th>event</th><th>actions</th></tr>" +
+    d.reports.map((r) => `<tr><td>${r.report_id}</td><td class="state-${r.state}"><b>${r.state}</b></td><td>${esc(r.category)}</td>
+      <td>${esc(r.original_text)}</td><td class="muted">${esc(r.segment_id)}</td><td>${r.reports_on_segment}</td>
+      <td>${r.extraction_mode}${r.extraction_confidence != null ? " · conf " + r.extraction_confidence : ""}</td><td>${r.submitted_at}</td><td>${r.linked_event_id || ""}</td>
+      <td>${r.state === "accepted" ? `<button data-a="verify" data-r="${r.report_id}">Verify</button> <button class="sec" data-a="reject" data-r="${r.report_id}">Reject</button>` : ""}
+          ${r.state === "verified" ? `<button data-a="repair" data-r="${r.report_id}">Mark repaired</button>` : ""}</td></tr>`).join("");
+  $("events").innerHTML = "<tr><th>id</th><th>type</th><th>field → value</th><th>segments</th><th>starts</th><th>ends</th><th>supersedes</th><th>by</th><th>status</th><th></th></tr>" +
+    d.events.map((e) => `<tr><td>${e.event_id}</td><td>${e.event_type}</td><td>${e.field || "–"} ${e.new_value ?? ""}</td>
+      <td class="muted">${JSON.parse(e.segment_ids).length} seg</td><td>${e.starts_at}</td><td>${e.ends_at || "open"}</td><td>${e.supersedes || ""}</td><td>${e.created_by}</td>
+      <td>${e.rolled_back ? "rolled back" : "active window"}</td><td>${e.rolled_back ? "" : `<button class="sec" data-a="rollback" data-e="${e.event_id}">Rollback</button>`}</td></tr>`).join("");
+  document.querySelectorAll("button[data-a]").forEach((b) => b.onclick = () =>
+    act(b.dataset.a, b.dataset.e ? { event_id: b.dataset.e } : { report_id: b.dataset.r, hour: +$("hr").value }));
+}
+$("load").onclick = load;
+if ($("tok").value) load();
+</script></body></html>

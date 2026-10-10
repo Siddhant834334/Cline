@@ -65,10 +65,16 @@ def _event(con, sids, field, value, etype, start, end, reviewer, supersedes=None
     return eid
 
 
+def physical_edge_fragments(con, sid):
+    edge = sid.rsplit("-", 1)[0]
+    rows = con.execute("SELECT segment_id FROM segment WHERE segment_id LIKE ? ORDER BY segment_id", (edge + "-%",)).fetchall()
+    return [x[0] for x in rows if x[0].rsplit("-", 1)[0] == edge] or [sid]
+
+
 def verify(con, rid, reviewer, starts_at=None, segment_ids=None):
     r = _get(con, rid, ("accepted",))
     cat = CATEGORIES[json.loads(r["extracted_json"])["category"]]
-    sids = segment_ids or [r["segment_id"]]
+    sids = segment_ids or physical_edge_fragments(con, r["segment_id"])
     for sid in sids:
         if not segment_exists(con, sid):
             raise ValidationError("unknown_segment")

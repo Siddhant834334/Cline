@@ -55,7 +55,9 @@ def test_loop_unverified_noop_verify_reroutes_repair_restores_rollback(con, segs
     r, created = reports.submit(con, "k1", "light nahi hai", sid, "lamp_outage", "manual")
     assert created and r["state"] == "accepted"
     assert calm(con, segs)["segment_ids"] == before["segment_ids"]
-    eid = reports.verify(con, r["report_id"], "rev", starts_at=DEP.replace(hour=21), segment_ids=edge)
+    eid = reports.verify(con, r["report_id"], "rev", starts_at=DEP.replace(hour=21))
+    stored = json.loads(con.execute("SELECT segment_ids FROM condition_event WHERE event_id=?", (eid,)).fetchone()[0])
+    assert set(edge) <= set(stored) and all(x.rsplit("-", 1)[0] == edge[0].rsplit("-", 1)[0] for x in stored)
     after = calm(con, segs)
     assert after["segment_ids"] != before["segment_ids"]
     assert sid not in after["segment_ids"]
