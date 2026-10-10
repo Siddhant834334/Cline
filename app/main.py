@@ -164,6 +164,14 @@ def review_rollback(req: RollbackReq, authorization: str = Header(None)):
     return guarded(lambda: reports.rollback(con, req.event_id, "demo_reviewer") or {"ok": True})
 
 
+@app.get("/api/demo_pairs")
+def demo_pairs():
+    path = config.DATA / "demo_pairs.json"
+    if not path.exists():
+        raise HTTPException(404, "data/demo_pairs.json missing; run scripts/demo_gate.py")
+    return json.loads(path.read_text())
+
+
 @app.get("/api/provenance")
 def provenance():
     return {"actual_source_v1": "synthetic_generator",

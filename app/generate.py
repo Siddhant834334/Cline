@@ -33,10 +33,10 @@ DEFAULT_SCENARIO = {
             "waterlogging": 0.1
         },
         "residential": {
-            "lighting_level": 0.7,
-            "activity_level": 0.55,
+            "lighting_level": 0.75,
+            "activity_level": 0.62,
             "walkability": 0.6,
-            "sightline_depth": 0.5,
+            "sightline_depth": 0.58,
             "open_poi_distance": 0.5,
             "dog_report_risk": 0.4,
             "waterlogging": 0.2
@@ -60,8 +60,8 @@ DEFAULT_SCENARIO = {
             "waterlogging": 0.5
         }
     },
-    "zone_cells": 6,
-    "noise": 0.12,
+    "zone_cells": 10,
+    "noise": 0.08,
     "late_night_decay": {
         "lighting_level": 0.05,
         "activity_level": 0.35,
@@ -74,7 +74,14 @@ DEFAULT_SCENARIO = {
         14,
         30
     ],
-    "contradictory_report_rate": 0.01
+    "contradictory_report_rate": 0.01,
+    "zone_weights": {
+        "academic": 0.28,
+        "hostel": 0.24,
+        "residential": 0.22,
+        "periphery": 0.16,
+        "lakeside": 0.1
+    }
 }
 
 
@@ -84,9 +91,20 @@ def _zone(seg, sc, bounds):
     k = sc["zone_cells"]
     i = min(k - 1, int((la - s) / max(1e-12, n - s) * k))
     j = min(k - 1, int((lo - w) / max(1e-12, e - w) * k))
-    h = hashlib.sha256(f"{sc['seed']}:{i}:{j}".encode()).digest()[0]
-    names = sorted(sc["zones"])
-    return names[h % len(names)]
+    return zone_for_cell(sc, i, j)
+
+
+def zone_for_cell(sc, i, j):
+    h = hashlib.sha256(f"{sc['seed']}:{i}:{j}".encode()).digest()
+    u = int.from_bytes(h[:8], "big") / 2 ** 64
+    weights = sc["zone_weights"]
+    total = sum(weights.values())
+    acc = 0.0
+    for name, wgt in weights.items():
+        acc += wgt / total
+        if u < acc:
+            return name
+    return list(weights)[-1]
 
 
 def slot_time(base, hour):

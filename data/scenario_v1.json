@@ -22,10 +22,10 @@
       "waterlogging": 0.1
     },
     "residential": {
-      "lighting_level": 0.7,
-      "activity_level": 0.55,
+      "lighting_level": 0.75,
+      "activity_level": 0.62,
       "walkability": 0.6,
-      "sightline_depth": 0.5,
+      "sightline_depth": 0.58,
       "open_poi_distance": 0.5,
       "dog_report_risk": 0.4,
       "waterlogging": 0.2
@@ -49,8 +49,8 @@
       "waterlogging": 0.5
     }
   },
-  "zone_cells": 6,
-  "noise": 0.12,
+  "zone_cells": 10,
+  "noise": 0.08,
   "late_night_decay": {
     "lighting_level": 0.05,
     "activity_level": 0.35,
@@ -63,5 +63,12 @@
     14,
     30
   ],
-  "contradictory_report_rate": 0.01
+  "contradictory_report_rate": 0.01,
+  "zone_weights": {
+    "academic": 0.28,
+    "hostel": 0.24,
+    "residential": 0.22,
+    "periphery": 0.16,
+    "lakeside": 0.1
+  }
 }
