@@ -1,21 +1,53 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Reviewer portal · FFNN</title><link rel="stylesheet" href="/style.css"></head>
-<body>
-<header><b>Reviewer portal</b> <span class="badge warn">DEMO AUTH (bearer token)</span>
-<span class="badge">accepted ≠ verified ≠ fixed</span>
-<nav><a href="/">Map</a> · <a href="/provenance">Provenance</a></nav></header>
+<html><head><meta charset="utf-8"><title>Dusk · Reviewer Portal</title><link rel="stylesheet" href="/style.css"></head>
+<body class="subpage">
+<header class="sub-header">
+  <span class="brand-title">Dusk · Reviewer Portal</span>
+  <span class="badge warn">DEMO AUTH (bearer token)</span>
+  <span class="badge" style="background:rgba(255,255,255,0.15);color:#fff">accepted &ne; verified &ne; fixed</span>
+  <nav>
+    <a href="/">Walk Map</a>
+    <a href="/portal" class="active">Reviewer</a>
+    <a href="/provenance">Provenance</a>
+  </nav>
+</header>
 <div class="portal">
-<label>Reviewer token <input id="tok" type="text" style="width:260px"></label>
-<label>Event effective at hour <input id="hr" type="number" min="0" max="23" value="21" style="width:60px"> <span class="muted">(scenario clock; events expire at query time)</span></label>
-<button id="load">Load</button> <span id="msg" class="muted"></span>
-<h3>Reports</h3><table id="reports"></table>
-<h3>Condition events</h3><table id="events"></table>
-<p class="muted">Nothing a user submits changes routing until verified here. Verified means a reviewer accepted the report; it does not mean the problem is fixed. Fixed requires a separate repair event.</p>
+  <h1 class="page-title">1.4 Community Report &amp; Verification Loop</h1>
+  <p class="page-subtitle">Nothing a user submits in <b>Dusk</b> changes routing until verified here. <span class="hl-pill">Verified</span> means a reviewer accepted the report; <span class="hl-pill">Fixed</span> requires a separate repair event.</p>
+
+  <div class="arch-strip">
+    <div class="arch-box">
+      <b>01 · Community Submission</b>
+      <span>Idempotent draft &amp; submit · state = accepted (no routing change)</span>
+    </div>
+    <div class="arch-box">
+      <b>02 · Reviewer Verification</b>
+      <span>Authenticated review · creates expiring whole-edge condition_event</span>
+    </div>
+    <div class="arch-box">
+      <b>03 · Repair or Rollback</b>
+      <span>Supersedes outage event or reverts state · routes restore automatically</span>
+    </div>
+  </div>
+
+  <div class="portal-controls">
+    <label>Reviewer token <input id="tok" type="text" placeholder="demo-reviewer-token" style="width:240px;margin:0;background:#fff"></label>
+    <label>Event effective at hour <input id="hr" type="number" min="0" max="23" value="21" style="width:70px;margin:0;background:#fff"></label>
+    <span class="muted">(scenario clock; events expire at query time)</span>
+    <button class="compute-btn" id="load" style="width:auto;padding:8px 18px">Load Queue</button>
+    <span id="msg" class="muted"></span>
+  </div>
+
+  <h3>Submitted Community Reports</h3>
+  <table id="reports"></table>
+
+  <h3>Active &amp; Historical Condition Events</h3>
+  <table id="events"></table>
 </div>
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-$("tok").value = localStorage.fnnTok || "";
+$("tok").value = localStorage.fnnTok || "demo-reviewer-token";
 async function call(path, body) {
   localStorage.fnnTok = $("tok").value;
   const r = await fetch(path, { method: body ? "POST" : "GET", headers: { "content-type": "application/json",
@@ -28,17 +60,16 @@ async function act(kind, body) {
 }
 async function load() {
   let d; try { d = await call("/api/review/reports"); } catch (e) { $("msg").textContent = "Error: " + e.message; return; }
-  const hr = +$("hr").value;
   $("reports").innerHTML = "<tr><th>id</th><th>state</th><th>category</th><th>original text</th><th>segment</th><th>reports on segment</th><th>extraction</th><th>submitted</th><th>event</th><th>actions</th></tr>" +
-    d.reports.map((r) => `<tr><td>${r.report_id}</td><td class="state-${r.state}"><b>${r.state}</b></td><td>${esc(r.category)}</td>
+    d.reports.map((r) => `<tr><td><b>${r.report_id}</b></td><td><b class="state-${r.state}">${r.state}</b></td><td><span class="hl-pill">${esc(r.category)}</span></td>
       <td>${esc(r.original_text)}</td><td class="muted">${esc(r.segment_id)}</td><td>${r.reports_on_segment}</td>
       <td>${r.extraction_mode}${r.extraction_confidence != null ? " · conf " + r.extraction_confidence : ""}</td><td>${r.submitted_at}</td><td>${r.linked_event_id || ""}</td>
-      <td>${r.state === "accepted" ? `<button data-a="verify" data-r="${r.report_id}">Verify</button> <button class="sec" data-a="reject" data-r="${r.report_id}">Reject</button>` : ""}
-          ${r.state === "verified" ? `<button data-a="repair" data-r="${r.report_id}">Mark repaired</button>` : ""}</td></tr>`).join("");
-  $("events").innerHTML = "<tr><th>id</th><th>type</th><th>field → value</th><th>segments</th><th>starts</th><th>ends</th><th>supersedes</th><th>by</th><th>status</th><th></th></tr>" +
-    d.events.map((e) => `<tr><td>${e.event_id}</td><td>${e.event_type}</td><td>${e.field || "–"} ${e.new_value ?? ""}</td>
+      <td>${r.state === "accepted" ? `<button class="sec" data-a="verify" data-r="${r.report_id}">Verify</button> <button class="sec" data-a="reject" data-r="${r.report_id}">Reject</button>` : ""}
+          ${r.state === "verified" ? `<button class="sec" data-a="repair" data-r="${r.report_id}">Mark repaired</button>` : ""}</td></tr>`).join("");
+  $("events").innerHTML = "<tr><th>id</th><th>type</th><th>field &rarr; value</th><th>segments</th><th>starts</th><th>ends</th><th>supersedes</th><th>by</th><th>status</th><th></th></tr>" +
+    d.events.map((e) => `<tr><td><b>${e.event_id}</b></td><td><span class="hl-pill">${e.event_type}</span></td><td>${e.field || "–"} ${e.new_value ?? ""}</td>
       <td class="muted">${JSON.parse(e.segment_ids).length} seg</td><td>${e.starts_at}</td><td>${e.ends_at || "open"}</td><td>${e.supersedes || ""}</td><td>${e.created_by}</td>
-      <td>${e.rolled_back ? "rolled back" : "active window"}</td><td>${e.rolled_back ? "" : `<button class="sec" data-a="rollback" data-e="${e.event_id}">Rollback</button>`}</td></tr>`).join("");
+      <td>${e.rolled_back ? '<span class="state-rejected">rolled back</span>' : '<span class="state-fixed">active window</span>'}</td><td>${e.rolled_back ? "" : `<button class="sec" data-a="rollback" data-e="${e.event_id}">Rollback</button>`}</td></tr>`).join("");
   document.querySelectorAll("button[data-a]").forEach((b) => b.onclick = () =>
     act(b.dataset.a, b.dataset.e ? { event_id: b.dataset.e } : { report_id: b.dataset.r, hour: +$("hr").value }));
 }

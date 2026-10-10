@@ -1,29 +1,244 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Fear-Free Night Navigator</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="/style.css">
-</head><body>
-<header>
-  <b>Fear-Free Night Navigator</b>
-  <span class="badge warn">SIMULATED CONDITIONS</span>
-  <span class="badge">DEPARTURE-TIME SNAPSHOT</span>
-  <span id="params" class="muted"></span>
-  <nav><a href="/portal">Reviewer portal</a> · <a href="/provenance">Provenance</a></nav>
-</header>
-<main>
-  <aside id="side">
-    <p class="muted">Click the map to set <b>start</b>, then <b>end</b>. Click any road to inspect it or report a problem.</p>
-    <label>Departure <span id="hourv"></span><input id="hour" type="range" min="18" max="29" value="22"></label>
-    <label>Detour budget ×<span id="detv"></span><input id="detour" type="range" min="1.0" max="2.0" step="0.1" value="1.4"></label>
-    <button id="go">Find routes</button> <button id="reset" class="sec">Reset</button>
-    <div id="status" class="muted"></div>
-    <div id="cards"></div>
-    <div id="drawer" hidden></div>
-  </aside>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dusk — Safety-Aware Navigation</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="/style.css?v=13" />
+</head>
+<body>
+
+  <!-- Fullscreen Map -->
   <div id="map"></div>
-</main>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="/map.js"></script>
-<script src="/report.js"></script>
-</body></html>
+
+  <!-- Top-Center Mode Pill (Exact 2-button Drive / Walk ratio) -->
+  <div class="travel-mode-pill" role="tablist" aria-label="Navigation mode">
+    <button type="button" class="travel-tab active" id="mode-drive">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>
+      </svg>
+      Drive
+    </button>
+    <button type="button" class="travel-tab" id="mode-walk">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M13.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM9.8 8.9L7 23h2.1l1.8-8 2.1 2v6h2v-7.5l-2.1-2 .6-3c1.1 1.2 2.9 2 4.6 2v-2c-1.3 0-2.6-.6-3.4-1.6l-1-1.3c-.4-.5-.9-.9-1.6-1.1l-5.3-1.5c-.5-.1-1.1.1-1.4.5l-1.8 2.2L9 10v5h2v-4.4l1.8-.6"/>
+      </svg>
+      Walk
+    </button>
+  </div>
+
+  <!-- Bottom-Center Floating Map Prompt Pill -->
+  <div class="map-center-prompt" id="mapCenterPrompt">
+    <span class="ping-wrap">
+      <span class="ping-ring"></span>
+      <span class="ping-core"></span>
+    </span>
+    <span>Tap the map to set your route</span>
+  </div>
+
+  <!-- Circular Close Button when Routes are Open -->
+  <button id="backToSearchBtn" class="back-to-search-btn" aria-label="Back to search" hidden>
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+    </svg>
+  </button>
+
+  <!-- Top-Right Controls Stack (Only Safety Heatmap + My location) -->
+  <div class="top-right-controls" id="topRightStack">
+    <button id="btn-heatmap-toggle" class="luma-pill-btn active-primary" aria-pressed="true">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="#ffffff" id="heatmapIcon">
+        <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/>
+      </svg>
+      <span>Safety Heatmap</span>
+      <span id="heatmapDot" style="display:inline-block;width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,0.75)"></span>
+    </button>
+
+    <button id="btn-my-location" class="luma-pill-btn" type="button">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#222673" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+      </svg>
+      <span id="locBtnLabel">My location</span>
+    </button>
+    <span id="params" hidden></span>
+  </div>
+
+  <!-- Left Sidebar + Bottom Route Analysis Dock Wrapper -->
+  <div id="bottom-dock-wrapper">
+    <aside id="sidebar" class="floating-mode" role="complementary" aria-label="Route controls">
+      <div class="sidebar-header">
+        <div class="brand-pin-box">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 21s-7-5.5-7-11a7 7 0 1 1 14 0c0 5.5-7 11-7 11z"/>
+            <circle cx="12" cy="10" r="2.5" fill="#eccbf2"/>
+          </svg>
+        </div>
+        <div>
+          <h1 class="brand-h1">Dusk</h1>
+          <p class="brand-sub">Safety-Aware Navigation</p>
+          <p class="brand-mode" id="profileLabel">Driving routes</p>
+        </div>
+      </div>
+
+      <div class="sidebar-scroll-body">
+        <div class="sidebar-divider"></div>
+
+        <!-- 3-Step Progress Section (shown when !hasRoutes) -->
+        <div class="step-section" id="stepSection">
+          <div class="step-bars">
+            <div class="step-bar-seg current" id="sbar1"></div>
+            <div class="step-bar-seg" id="sbar2"></div>
+            <div class="step-bar-seg" id="sbar3"></div>
+          </div>
+          <p class="step-label" id="stepCaption"><strong>Step 1</strong> of 3 &mdash; Set your starting point</p>
+        </div>
+
+        <!-- Connected FROM / TO Box with Live Autocomplete -->
+        <div class="od-section">
+          <div class="od-card">
+            <!-- FROM Row -->
+            <div class="od-row">
+              <div class="od-icon-col">
+                <div class="dot-origin empty" id="fromDot"></div>
+                <div class="rail-line"></div>
+              </div>
+              <div class="od-input-col" id="fromWrap">
+                <div class="od-lbl">From</div>
+                <div class="od-input-wrap">
+                  <input id="fromInput" type="text" class="od-input active" placeholder="Where are you starting?" autocomplete="off" />
+                  <button id="clearFromBtn" class="od-clear-btn" aria-label="Clear From" hidden>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                  </button>
+                </div>
+                <div class="ac-dropdown" id="fromDropdown" hidden>
+                  <ul class="ac-list" id="fromList"></ul>
+                </div>
+              </div>
+            </div>
+
+            <div class="od-row-divider"></div>
+
+            <!-- TO Row -->
+            <div class="od-row">
+              <div class="od-icon-col">
+                <div class="sq-dest empty" id="toSq"></div>
+              </div>
+              <div class="od-input-col" id="toWrap">
+                <div class="od-lbl">To</div>
+                <div class="od-input-wrap">
+                  <input id="toInput" type="text" class="od-input" placeholder="Where are you going?" autocomplete="off" />
+                  <button id="clearToBtn" class="od-clear-btn" aria-label="Clear To" hidden>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                  </button>
+                </div>
+                <div class="ac-dropdown" id="toDropdown" hidden>
+                  <ul class="ac-list" id="toList"></ul>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Pulsing Tap-the-map Prompt -->
+          <div class="placing-hint" id="placingHint">
+            <span class="ping-wrap">
+              <span class="ping-ring"></span>
+              <span class="ping-core"></span>
+            </span>
+            <p id="placingText">Tap the map to set your <strong>source</strong></p>
+          </div>
+        </div>
+
+        <!-- Departure Time & Extra Time Card -->
+        <div class="facts-wrap" id="timeBudgetWrap">
+          <div class="time-budget-card">
+            <div class="tb-row">
+              <div class="tb-head">
+                <span class="tb-label">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px">
+                    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                  </svg>
+                  Departure Time
+                </span>
+                <button type="button" id="nowTimeBtn" class="tb-now-btn" title="Set to current time">Use Current Time</button>
+                <span class="hl-pill" id="hourv" hidden>22:00</span>
+              </div>
+              <div class="tb-time-controls">
+                <input id="hour" type="time" value="22:00" class="tb-time-input" aria-label="Departure Time" />
+              </div>
+            </div>
+            <div class="tb-row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--lavender-soft)">
+              <div class="tb-head">
+                <div>
+                  <span class="tb-label">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px">
+                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    </svg>
+                    Extra Time for Safer Roads
+                  </span>
+                  <div class="tb-sub">Allow a slightly longer walk to avoid dark streets</div>
+                </div>
+                <span class="hl-pill" id="detv">Up to +40%</span>
+              </div>
+              <input id="detour" type="range" min="1.0" max="2.0" step="0.1" value="1.4" />
+              <div class="tb-scale">
+                <span>Shortest path (0%)</span>
+                <span>Max safety detour (+100%)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Route Mode Pills (Fastest / Balanced / Safest — shown when hasRoutes) -->
+        <div class="mode-pills-row" id="modePillsRow" hidden></div>
+
+        <!-- Compute / Update Safe Route Button -->
+        <div class="compute-wrap">
+          <button id="go" class="btn-compute" disabled>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <span id="goLabel">Compute Safe Route</span>
+          </button>
+          <button id="reset" hidden>Reset</button>
+          <div id="status" class="muted" style="margin-top:6px;text-align:center"></div>
+        </div>
+
+        <div class="sidebar-footer" id="sidebarFooter">
+          Powered by PredictXGB &middot; OSMnx &middot;
+          <a href="/portal" style="color:inherit;text-decoration:underline">Reviewer</a> &middot;
+          <a href="/provenance" style="color:inherit;text-decoration:underline">Provenance</a>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Bottom-Right Route Analysis Dock (#route-panel — shown when hasRoutes) -->
+    <div id="route-panel-wrap" hidden>
+      <div id="route-panel">
+        <div id="cards"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom-Right Recent Routes Panel (shown when !hasRoutes) -->
+  <aside class="recent-routes-panel" id="recentPanel" aria-label="Recent routes">
+    <div class="recent-head" style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;">
+      <div>
+        <p class="recent-head-title">Recent routes</p>
+        <p class="recent-head-sub">Saved on this device only</p>
+      </div>
+      <svg class="recent-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--navy-deep); transition: transform 300ms ease;">
+        <polyline points="18 15 12 9 6 15"></polyline>
+      </svg>
+    </div>
+    <ul class="recent-ul" id="recentList"></ul>
+  </aside>
+
+  <!-- Floating Road Safety Inspector & Community Report Modal -->
+  <div id="drawer" class="inspector-modal" hidden></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/map.js?v=10"></script>
+  <script src="/report.js?v=10"></script>
+</body>
+</html>
