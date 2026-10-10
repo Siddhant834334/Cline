@@ -103,19 +103,40 @@ def product_search(net, s, t, L, budget, objective="time"):
     return None
 
 
-def longest_run(net, edges):
+def longest_run_span(net, edges):
     c = g = longest = 0.0
-    for e in edges:
+    run_start = run_last = None
+    best = None
+    for i, e in enumerate(edges):
         ln = net.segs[e]["length_m"]
         if net.conc[e]:
+            if c == 0.0:
+                run_start = i
             c += ln
             g = 0.0
-            longest = max(longest, c)
+            run_last = i
+            if c > longest:
+                longest = c
+                best = (run_start, run_last)
         elif c > 0.0:
             g += ln
             if g >= net.r_m - 1e-9:
                 c = g = 0.0
-    return longest
+    return longest, best
+
+
+def longest_run(net, edges):
+    return longest_run_span(net, edges)[0]
+
+
+def _run_fields(net, edges, best):
+    if best is None:
+        return [], [0.0, 0.0], None
+    first, last = best
+    run = [i for i in range(first, last + 1) if net.conc[edges[i]]]
+    start_m = sum(net.segs[edges[i]]["length_m"] for i in range(first))
+    end_m = start_m + sum(net.segs[edges[i]]["length_m"] for i in range(first, last + 1))
+    return [net.segs[edges[i]]["segment_id"] for i in run], [start_m, end_m], [first, last]
 
 
 def metrics(net, nodes, edges):
@@ -124,7 +145,8 @@ def metrics(net, nodes, edges):
     tm = sum(segs[e]["walk_time_s"] for e in edges)
     conc_m = sum(segs[e]["length_m"] for e in edges if net.conc[e])
     unk_m = sum(segs[e]["length_m"] for e in edges if net.status[e] == "no_data")
-    lr = longest_run(net, edges)
+    lr, best = longest_run_span(net, edges)
+    run_ids, run_bounds, run_index = _run_fields(net, edges, best)
     sp = config.WALK_SPEED_MPS
     cov = None
     if net.coverage is not None and length:
@@ -133,6 +155,8 @@ def metrics(net, nodes, edges):
         "time_s": tm, "length_m": length,
         "concerning_m": conc_m, "concerning_min": conc_m / sp / 60,
         "longest_stretch_m": lr, "longest_stretch_min": lr / sp / 60,
+        "longest_stretch_segment_ids": run_ids, "longest_stretch_bounds_m": run_bounds,
+        "longest_stretch_edge_index": run_index,
         "max_segment_risk": max((net.risk[e] for e in edges), default=0.0),
         "unknown_m": unk_m, "coverage": cov,
         "revisits_node": len(nodes) != len(set(nodes)),
