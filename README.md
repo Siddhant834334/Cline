@@ -1,4 +1,4 @@
-# Fear-Free Night Navigator
+# Dusk
 
 Walking routes on the **real IIT Guwahati road network** that minimise the *longest continuous concerning stretch*
 within a time budget. **Street conditions are synthetic.** Nothing here establishes real night-time safety.
