@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: fear-free-night-navigator
+    runtime: python
+    plan: free
+    branch: main
+    autoDeploy: true
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m app.generate && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: FNN_REVIEWER_TOKEN
+        generateValue: true
+      - key: ANTHROPIC_API_KEY
+        sync: false
