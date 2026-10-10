@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException, Header
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from . import config, db, reports, ticket
+from . import config, db, reports, ticket, places
 from .conditions import build_net, segment_detail, scenario_departure, plan_with_reasons
 from .extract import ValidationError
 from .graph import load_segments, nearest_node, components
@@ -187,6 +187,34 @@ def review_ticket(req: TicketReq, authorization: str = Header(None)):
     auth(authorization)
     return guarded(lambda: ticket.draft_ticket(con, req.report_id, demo_route_segments(),
                                                {s["segment_id"]: s for s in SEGMENTS}))
+
+
+def _snap(lat, lon):
+    import math
+    from .graph import node_coords
+    n = nearest_node(SEGMENTS, lat, lon, MAIN_COMPONENT)
+    la, lo = node_coords(SEGMENTS)[n]
+    d = math.hypot((la - lat) * 111320, (lo - lon) * 111320 * math.cos(math.radians(lat)))
+    return {"lat": la, "lon": lo, "distance_m": round(d, 1)}
+
+
+@app.get("/api/places/search")
+def places_search(q: str = "", limit: int = 8):
+    res = places.search(q, limit)
+    for p in res["results"]:
+        p["snapped"] = _snap(p["lat"], p["lon"])
+    res["bbox"] = list(places.BBOX)
+    res["attribution"] = "Data (c) OpenStreetMap contributors, ODbL. Search by Nominatim."
+    return res
+
+
+@app.get("/api/places")
+def places_all():
+    items = [dict(p) for p in places.local_places()]
+    for p in items:
+        p["snapped"] = _snap(p["lat"], p["lon"])
+    return {"count": len(items), "source": "osm_tiles", "places": items,
+            "attribution": "Data (c) OpenStreetMap contributors, ODbL."}
 
 
 @app.get("/api/demo_pairs")
