@@ -19,7 +19,7 @@ const MODE_CONFIG = {
   },
   calmest: {
     id: "calmest",
-    label: "Safest",
+    label: "Calmest",
     color: "#E7EBF4",
     bg: "#E6F4EA",
     textColor: "#145A2B",
@@ -93,16 +93,6 @@ function riskColor(r, st) {
   return cssVar("--lit");
 }
 
-function riskClass(r, st) {
-  if (st === "no_data") return "unknown";
-  const tau = cfg.tau ?? 0.5;
-  if (r > tau) return "unlit";
-  if (r > tau * 0.6) return "dim";
-  return "lit";
-}
-
-const RISK_WORD = { lit: "Lit, below threshold", dim: "Dim, below threshold", unlit: "Concerning, above threshold", unknown: "No data, counted as concerning" };
-
 function polylineMetres(ll) {
   let d = 0;
   for (let i = 1; i < ll.length; i++) {
@@ -121,22 +111,21 @@ function withLengths(card) {
   return card.geometry.map((g, i) => ({ ...g, length_m: raw[i] * k }));
 }
 
-function longestRun(geometry) {
-  const R = cfg.r_m ?? 40;
-  let c = 0, g = 0, runStart = -1, best = 0, bestStart = -1, bestEnd = -1;
-  geometry.forEach((s, i) => {
-    const len = s.length_m;
-    if (s.conc) {
-      if (c === 0) runStart = i;
-      c += len;
-      g = 0;
-      if (c > best) { best = c; bestStart = runStart; bestEnd = i; }
-    } else if (c > 0) {
-      g += len;
-      if (g >= R - 1e-9) { c = 0; g = 0; }
-    }
-  });
-  return { length: best, start: bestStart, end: bestEnd };
+const hasName = (c, n) => c.name === n || (c.also || []).includes(n);
+
+const BAND_WORD = {
+  good: "Assessed good (risk at or below threshold)",
+  concerning: "Concerning (risk above threshold)",
+  unknown: "No condition data, scored pessimistically and counted as concerning",
+};
+
+function bandKind(g) {
+  if (g.st === "no_data") return "unknown";
+  return g.conc ? "concerning" : "good";
+}
+
+function segmentTip(g, i, n) {
+  return `Segment ${i + 1} of ${n} \u00b7 ${Math.round(g.length_m)} m \u00b7 risk ${g.r.toFixed(2)} \u00b7 ${BAND_WORD[bandKind(g)]}`;
 }
 
 function lumaHeatColor(safetyScore) {
@@ -221,7 +210,7 @@ async function loadNetwork() {
       lineCap: "round",
       dashArray: s.closed ? "4 6" : s.st === "no_data" ? "3 5" : null
     });
-    line.bindTooltip(`<div>Risk <b>${s.r.toFixed(2)}</b> \u00b7 ${s.closed ? "Closed by a verified event" : RISK_WORD[riskClass(s.r, s.st)]}</div>`, {
+    line.bindTooltip(`<div>Risk <b>${s.r.toFixed(2)}</b> \u00b7 ${s.closed ? "Closed by a verified event" : s.st === "no_data" ? "No condition data" : "Status " + s.st}</div>`, {
       className: "luma-tooltip",
       direction: "top",
       sticky: true
@@ -464,7 +453,8 @@ let hoverLayer = null;
 
 function wireRibbons(res) {
   document.querySelectorAll(".rb").forEach((el) => {
-    const card = res.cards[+el.dataset.card];
+    const card = res.cards.find((c) => c.name === el.dataset.name);
+    if (!card) return;
     const g = card.geometry[+el.dataset.seg];
     const on = () => {
       if (hoverLayer) map.removeLayer(hoverLayer);
@@ -499,7 +489,8 @@ function renderCards() {
     return;
   }
 
-  const active = res.cards.some((c) => c.name === sel) ? sel : (res.cards.some((c) => c.name === "calmest") ? "calmest" : res.cards[0].name);
+  const selCard = res.cards.find((c) => hasName(c, sel)) || res.cards.find((c) => hasName(c, "calmest")) || res.cards.find((c) => hasName(c, "fastest")) || res.cards[0];
+  const active = selCard.name;
   sel = active;
   syncUIState();
 
@@ -519,8 +510,8 @@ function renderCards() {
     };
   });
 
-  const cur = res.cards.find((c) => c.name === active) || res.cards[0];
-  const fast = res.cards.find((c) => c.name === "fastest" || (c.also && c.also.includes("fastest"))) || res.cards[0];
+  const cur = selCard;
+  const fast = res.cards.find((c) => hasName(c, "fastest")) || selCard;
 
   const dd = lastRes.distances || {};
   const access = Math.round((dd.start_to_road_m || 0) + (dd.end_to_road_m || 0));
@@ -528,29 +519,43 @@ function renderCards() {
     ? `Along campus roads \u00b7 ${(dd.straight_line_m / 1000).toFixed(2)} km straight line` + (access >= 20 ? ` \u00b7 +${access} m to/from the road` : "")
     : "Along campus roads";
   const fastLongest = fast.longest_stretch_m;
-  const ordered = [...res.cards].sort((x, y) => ["fastest", "calmest", "balanced"].indexOf(x.name) - ["fastest", "calmest", "balanced"].indexOf(y.name));
-  const noCalmer = !res.cards.some((c) => c.name === "calmest" || (c.also || []).includes("calmest")) || res.cards.length === 1;
+  const rank = (c) => ["fastest", "calmest", "balanced"].indexOf(c.name);
+  const ordered = [...res.cards].sort((x, y) => rank(x) - rank(y));
+  const calmCard = res.cards.find((c) => hasName(c, "calmest"));
+  const noCalmer = !calmCard || hasName(calmCard, "fastest");
 
   const cardHtml = (c, idx) => {
     const mc = MODE_CONFIG[c.name] || MODE_CONFIG.calmest;
     const names = [c.name, ...(c.also || [])].map((n) => (MODE_CONFIG[n] || {}).label || n).join(" and ");
     const geo = withLengths(c);
     const total = geo.reduce((a, g) => a + g.length_m, 0) || 1;
-    const run = longestRun(geo);
+    const runIds = Array.isArray(c.longest_stretch_segment_ids) ? new Set(c.longest_stretch_segment_ids) : null;
+    const idx0 = runIds && runIds.size ? geo.findIndex((g) => runIds.has(g.id)) : -1;
+    let idx1 = -1;
+    if (idx0 >= 0) geo.forEach((g, i) => { if (runIds.has(g.id)) idx1 = i; });
     let acc = 0, runL = 0, runW = 0;
     const bands = geo.map((g, i) => {
       const w = (g.length_m / total) * 100;
-      if (i === run.start) runL = acc;
-      if (i >= run.start && i <= run.end && run.start >= 0) runW += w;
+      if (i === idx0) runL = acc;
+      if (idx0 >= 0 && i >= idx0 && i <= idx1) runW += w;
       acc += w;
-      const cls = riskClass(g.r, g.st);
-      const tip = `Segment ${i + 1} of ${geo.length}, ${Math.round(g.length_m)} m. Risk ${g.r.toFixed(2)}. ${RISK_WORD[cls]}.`;
-      return `<button type="button" class="rb rb-${cls}" style="flex-basis:${w.toFixed(4)}%" data-card="${idx}" data-seg="${i}" aria-label="${tip}" title="${tip}"></button>`;
+      const kind = bandKind(g);
+      const inRun = runIds && runIds.has(g.id);
+      const tip = segmentTip(g, i, geo.length) + (inRun ? " \u00b7 part of the longest run" : "");
+      return `<button type="button" class="rb rb-${kind}${inRun ? " in-run" : ""}" style="flex-basis:${w.toFixed(4)}%" data-name="${c.name}" data-seg="${i}" aria-label="${tip}" title="${tip}"></button>`;
     }).join("");
+    const isFast = hasName(c, "fastest");
     const delta = Math.round(c.longest_stretch_m - fastLongest);
-    const isFast = c.name === "fastest" || (c.also || []).includes("fastest");
-    const deltaTxt = isFast ? "Reference route" : delta === 0 ? "Same as fastest" : `${delta < 0 ? "\u2212" : "+"}${Math.abs(delta)} m vs fastest`;
-    const timeDiff = Math.round((c.time_s - fast.time_s) / 60);
+    const deltaTxt = isFast ? "" : `(${delta === 0 ? "same as fastest" : `${delta < 0 ? "\u2212" : "+"}${Math.abs(delta)} m vs fastest`})`;
+    const extraMin = (c.time_s - fast.time_s) / 60;
+    const share = c.length_m > 0 ? c.concerning_m / c.length_m : null;
+    const why = [];
+    if (!isFast) why.push(extraMin > 0.05 ? `Adds ${extraMin.toFixed(1)} min` : "Same walk time as fastest");
+    if (!isFast && delta < 0) why.push(`Longest dark stretch ${Math.abs(delta)} m shorter than fastest`);
+    if (!isFast && delta > 0) why.push(`Longest dark stretch ${delta} m longer than fastest`);
+    if (c.unknown_m >= 1) why.push(`${Math.round(c.unknown_m)} m of this route has no condition data, scored pessimistically`);
+    if (c.coverage != null) why.push(`Condition data covers ${Math.round(c.coverage * 100)}% of the fields on this route`);
+    if (isFast) why.push("This is the fastest eligible route; the others are compared against it");
     return `
       <article class="rcard${c.name === active ? " sel" : ""}" data-name="${c.name}" style="--accent:${mc.color};--i:${idx}" aria-label="${names} route">
         <header class="rcard-head">
@@ -560,24 +565,29 @@ function renderCards() {
         <p class="rcard-claim muted">${c.claim}</p>
         <div class="hero">
           <span class="hero-num">${Math.round(c.longest_stretch_m)}</span><span class="hero-unit">m</span>
-          <span class="hero-cap">longest continuous concerning stretch</span>
-          <span class="hero-delta${!isFast && delta < 0 ? " better" : ""}">${deltaTxt}</span>
+          ${deltaTxt ? `<span class="hero-delta">${deltaTxt}</span>` : ""}
+          <span class="hero-cap">Longest continuous concerning stretch</span>
         </div>
         <div class="ribbon-wrap">
-          <div class="ribbon" role="group" aria-label="Journey from start to end, ${geo.length} segments">${bands}</div>
-          ${run.start >= 0 ? `<div class="run-mark" style="left:${runL.toFixed(3)}%;width:${Math.max(runW, 0.6).toFixed(3)}%" aria-hidden="true"></div>
-          <div class="run-label" style="left:${runL.toFixed(3)}%">${Math.round(c.longest_stretch_m)} m</div>` : `<div class="run-none">No concerning stretch on this route</div>`}
+          <div class="ribbon" role="group" aria-label="Journey from start to end, ${geo.length} segments. Use arrow keys to move between segments.">${bands}</div>
+          ${idx0 >= 0 ? `<div class="run-mark" style="left:${runL.toFixed(3)}%;width:${Math.max(runW, 0.6).toFixed(3)}%" aria-hidden="true"></div>
+          <div class="run-label" style="left:${runL.toFixed(3)}%">${Math.round(c.longest_stretch_m)} m</div>` : runIds && !runIds.size ? `<div class="run-none">No concerning stretch on this route</div>` : ""}
         </div>
         <div class="ribbon-ends"><span>Start</span><span>End</span></div>
         <table class="rmetrics">
-          <tr><td>Walk time</td><td>${fmtMin(c.time_s)}${timeDiff > 0 ? ` (+${timeDiff} min)` : ""}</td></tr>
-          <tr><td>Distance</td><td>${(c.length_m / 1000).toFixed(2)} km</td></tr>
-          <tr><td>Total concerning</td><td>${Math.round(c.concerning_m)} m</td></tr>
+          <tr><td>Walk time</td><td>${fmtMin(c.time_s)}</td></tr>
+          <tr><td>Length</td><td>${(c.length_m / 1000).toFixed(2)} km</td></tr>
+          <tr><td>Total concerning</td><td>${Math.round(c.concerning_m)} m \u00b7 ${c.concerning_min.toFixed(1)} min</td></tr>
+          <tr><td>Concerning share of route</td><td>${share == null ? "\u2013" : Math.round(share * 100) + "%"}</td></tr>
           <tr><td>Max single-segment risk</td><td>${c.max_segment_risk.toFixed(2)}</td></tr>
           <tr><td>Unknown (no data)</td><td>${Math.round(c.unknown_m)} m</td></tr>
           <tr><td>Data coverage</td><td>${c.coverage == null ? "\u2013" : Math.round(c.coverage * 100) + "%"}</td></tr>
         </table>
-        <p class="rcard-codes">${c.reason_codes.join(" \u00b7 ")}</p>
+        <div class="rp-eval-box why-box">
+          <p class="why-title">Why this route</p>
+          <ul class="why-list">${why.map((t) => `<li>${t}</li>`).join("")}</ul>
+          <div class="why-codes">${c.reason_codes.map((rc) => `<span class="hl-pill">${rc}</span>`).join("")}</div>
+        </div>
       </article>`;
   };
 
@@ -590,12 +600,14 @@ function renderCards() {
       <button class="sec" id="simHazardBtn">Report a hazard on this route</button>
     </div>
     ${noCalmer ? `<p class="no-calmer">No calmer route fits the time budget. The fastest route is already the calmest option within ${Math.round((+$("detour").value - 1) * 100)}% extra time.</p>` : ""}
-    <div class="rcards">${ordered.map((c) => cardHtml(c, res.cards.indexOf(c))).join("")}</div>
+    <div class="rcards">${ordered.map((c, i) => cardHtml(c, i)).join("")}</div>
     <div class="legend" aria-label="Ribbon legend">
-      <span><i class="lg lg-lit"></i>Lit</span><span><i class="lg lg-dim"></i>Dim</span>
-      <span><i class="lg lg-unlit"></i>Concerning (risk above ${cfg.tau})</span><span><i class="lg lg-unknown"></i>No data</span>
+      <span><i class="lg lg-good"></i>Assessed good (risk at or below ${cfg.tau})</span>
+      <span><i class="lg lg-concerning"></i>Concerning (risk above ${cfg.tau})</span>
+      <span><i class="lg lg-unknown"></i>No data (dashed, counted as concerning)</span>
       <span><i class="lg lg-run"></i>Longest run</span>
     </div>
+    <p class="map-key">On the map the selected route is coloured by each segment's risk; other routes are thin lines.</p>
   `;
 
   document.querySelectorAll(".rcard-pick").forEach((b) => {
@@ -609,7 +621,7 @@ function renderCards() {
   }
 
   $("simHazardBtn").onclick = () => {
-    const seg = cur.geometry.find((g) => !g.conc) || cur.geometry[0];
+    const seg = cur.geometry.find((g) => g.conc) || cur.geometry[0];
     if (seg) openDrawer(seg.id, true);
   };
 
@@ -618,34 +630,27 @@ function renderCards() {
   for (const c of order) {
     const isSel = c.name === active;
     const mCfg = MODE_CONFIG[c.name] || MODE_CONFIG.calmest;
-    for (const g of c.geometry) {
+    const geo = withLengths(c);
+    geo.forEach((g, i) => {
+      const unknown = g.st === "no_data";
       if (isSel) boundsPts.push(...g.ll);
       const line = L.polyline(g.ll, {
-        color: mCfg.color,
-        weight: isSel ? 5 : 4,
-        opacity: isSel ? 0.9 : 0.6,
-        dashArray: isSel ? null : "1, 8",
-        lineCap: "round",
+        color: isSel ? riskColor(g.r, g.st) : (unknown ? cssVar("--unknown") : mCfg.color),
+        weight: isSel ? 6 : 3,
+        opacity: isSel ? 0.95 : 0.35,
+        dashArray: unknown ? "4 6" : null,
+        lineCap: unknown ? "butt" : "round",
         lineJoin: "round"
       });
-      line.bindTooltip(
-        `<div style="display:flex;flex-direction:column;gap:2px">
-          <span style="font-weight:600">${mCfg.label}</span>
-          <span>${fmtMin(c.time_s)} \u00b7 longest concerning stretch ${Math.round(c.longest_stretch_m)} m</span>
-        </div>`,
-        { className: "luma-tooltip", direction: "top", sticky: true }
-      );
-      line.on("click", (e) => {
-        L.DomEvent.stopPropagation(e);
-        if (!isSel) {
-          sel = c.name;
-          renderCards();
-        } else {
-          openDrawer(g.id);
-        }
-      });
+      if (isSel) {
+        line.bindTooltip(segmentTip(g, i, geo.length), { className: "luma-tooltip", direction: "top", sticky: true });
+        line.on("click", (e) => { L.DomEvent.stopPropagation(e); openDrawer(g.id); });
+      } else {
+        line.bindTooltip(`${mCfg.label} route \u00b7 click to show its risk`, { className: "luma-tooltip", direction: "top", sticky: true });
+        line.on("click", (e) => { L.DomEvent.stopPropagation(e); sel = c.name; renderCards(); });
+      }
       routeLayer.addLayer(line);
-    }
+    });
   }
 
   if (boundsPts.length) {
