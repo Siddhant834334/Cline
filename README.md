@@ -36,4 +36,6 @@ Live report extraction: set `ANTHROPIC_API_KEY`. Without it, the demo Hinglish s
   loitering inference (removed permanently), native telemetry, bus/cab chains, exact exposure minimisation,
   any pilot or authority cooperation.
 
-Parameters and acceptance-check status: `docs/ASSUMPTIONS.md`. Geography (c) OpenStreetMap contributors, ODbL.
+Parameters and acceptance-check status: [`docs/ASSUMPTIONS.md`](docs/ASSUMPTIONS.md). Every decision that departed from or filled gaps in the build spec: [`docs/DECISIONS.md`](docs/DECISIONS.md).
+
+Geography (c) OpenStreetMap contributors, ODbL.
