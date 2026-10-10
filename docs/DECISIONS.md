@@ -261,3 +261,22 @@ Scenario parameters now committed (after the restructuring requested by the team
 10, noise 0.08, residential lighting 0.75 / activity 0.62 / sightline 0.58. Measured concerning share:
 18:00 21.6%, 20:00 22.7%, 22:00 25.4%, 01:00 37.7%. These replace the figures in section 1, which describe the
 earlier scenario.
+
+---
+
+## 23. Place search for To / From (`/api/places/search`, `/api/places`)
+
+- **Chosen:** live search through OpenStreetMap's **Nominatim** API, restricted to the campus bbox
+  (`bounded=1`), from the backend, not the browser. Each result's name and coordinates come from the same
+  Nominatim record, so they cannot drift apart. Each result also gets `snapped`: the road-graph junction the router
+  will actually use, and its distance in metres.
+- **Fallback:** if Nominatim is unreachable or returns nothing, names from the committed OSM tiles
+  (`data/osm_tiles/`) are searched instead, labelled `source: "osm_tiles"`. `GET /api/places` lists all of them
+  (59 at the time of writing) for an offline dropdown.
+- **Usage policy compliance:** an identifying User-Agent, at most one request per 1.1 s (server-wide lock), a result
+  cache, a 2-character minimum query, and attribution returned in every response. The public Nominatim instance is
+  for light use only; a hosted geocoder would be needed beyond a demo.
+- **Gap filled: unnamed places.** Nominatim returns the street for features with no name. These are labelled
+  "Unnamed <type> near <street>" so a street name is never shown as a place name.
+- **Limit:** coverage is whatever OSM volunteers have mapped around IITG. Missing or mis-tagged buildings will be
+  missing or wrong here too. This is not "every place on the internet", and no commercial geocoder is used.
