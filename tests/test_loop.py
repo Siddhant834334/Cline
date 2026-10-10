@@ -39,13 +39,46 @@ def target_segment(c, con, segs):
 
 
 def target_edge(c, con, segs):
+    from app.extract import CATEGORIES
+    outage = CATEGORIES["lamp_outage"]
     net = build_net(con, segs, DEP)
     idx = {s["segment_id"]: i for i, s in enumerate(segs)}
-    groups = {}
-    for sid in c["segment_ids"]:
-        if not net.conc[idx[sid]]:
-            groups.setdefault(sid.rsplit("-", 1)[0], []).append(sid)
-    return max(groups.values(), key=len)
+    route = c["segment_ids"]
+    on_route = {}
+    for pos, sid in enumerate(route):
+        on_route.setdefault(sid.rsplit("-", 1)[0], []).append(pos)
+    candidates = {}
+    for edge, positions in on_route.items():
+        if all(net.conc[idx[route[p]]] for p in positions):
+            continue
+        candidates[edge] = reports.physical_edge_fragments(con, route[positions[0]])
+    if not candidates:
+        pytest.fail("target_edge: calmest route has no physical edge with a non-concerning fragment")
+    all_frags = sorted({f for frags in candidates.values() for f in frags})
+    con.execute("INSERT INTO condition_event VALUES (?,?,?,?,?,?,?,?,?,?,0)",
+                ("E-probe", json.dumps(all_frags), outage["field"], outage["new_value"], outage["event_type"],
+                 DEP.replace(hour=21).isoformat(), DEP.replace(hour=23).isoformat(), "reviewed_observation",
+                 "test_probe", None))
+    try:
+        probe = build_net(con, segs, DEP)
+    finally:
+        con.rollback()
+    qualified = []
+    for edge, frags in candidates.items():
+        if not all(probe.risk[idx[f]] > probe.tau for f in frags):
+            continue
+        positions = on_route[edge]
+        lo, hi = min(positions), max(positions)
+        adjacent = (lo > 0 and net.conc[idx[route[lo - 1]]]) or (hi + 1 < len(route) and net.conc[idx[route[hi + 1]]])
+        length = sum(segs[idx[route[p]]]["length_m"] for p in positions)
+        qualified.append((adjacent, length, edge))
+    if not qualified:
+        pytest.fail(f"target_edge: none of {len(candidates)} candidate edges on the calmest route would have every "
+                    f"fragment above TAU={net.tau} after a lamp_outage (lighting_level={outage['new_value']}); "
+                    "the scenario gives no segment a lamp outage can make concerning")
+    qualified.sort(key=lambda q: (q[0], q[1]), reverse=True)
+    edge = qualified[0][2]
+    return [route[p] for p in on_route[edge]]
 
 
 def test_loop_unverified_noop_verify_reroutes_repair_restores_rollback(con, segs):
