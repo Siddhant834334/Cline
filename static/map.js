@@ -27,30 +27,40 @@ const MODE_CONFIG = {
   }
 };
 
-const PLACES = [
-  { name: "Disang Hostel, Footpath surrounding Disang", sub: "Hostel Zone, IIT Guwahati, Assam", lat: 26.1862, lng: 91.6938 },
-  { name: "Bhupen Hazarika Auditorium, Footpath", sub: "Academic Complex, IIT Guwahati", lat: 26.18951, lng: 91.7002911 },
-  { name: "Tower E, Lohit & Umiam Hostels", sub: "Hostel Zone, IIT Guwahati, Assam", lat: 26.1872635, lng: 91.6957466 },
-  { name: "Academic Core & Lecture Halls", sub: "Core 1–5 Complex, IIT Guwahati", lat: 26.18951, lng: 91.7002911 },
-  { name: "Kameng & Barak Hostels", sub: "Hostel Avenue, IIT Guwahati", lat: 26.1881, lng: 91.6912 },
-  { name: "Brahmaputra & Dihing Hostels", sub: "Western Hostel Zone, IIT Guwahati", lat: 26.1868, lng: 91.6895 },
-  { name: "Subansiri & Dhansiri Hostels", sub: "Central Hostel Road, IIT Guwahati", lat: 26.1902, lng: 91.6942 },
-  { name: "Manas, Siang & Kapili Hostels", sub: "Hostel Sector, IIT Guwahati", lat: 26.1876, lng: 91.6928 },
-  { name: "Lakshmibai National Central Library", sub: "Computer & Information Center, IITG", lat: 26.1922, lng: 91.6965 },
-  { name: "New Student Activity Centre (SAC)", sub: "Gymkhana & Sports Complex, IITG", lat: 26.1905, lng: 91.6920 },
-  { name: "IITG Hospital & Medical Centre", sub: "Guest House Road, IIT Guwahati", lat: 26.1948, lng: 91.6995 },
-  { name: "Main Gate & Research Park", sub: "Amingaon Entrance, North Guwahati", lat: 26.1970, lng: 91.6915 },
-  { name: "Serpentine Lake Promenade", sub: "Central Campus Viewpoint, IITG", lat: 26.1915, lng: 91.6950 },
-  { name: "Khoka Market & Food Court", sub: "Campus Commercial Hub, IITG", lat: 26.1888, lng: 91.6885 },
-  { name: "D-Type Faculty Quarters", sub: "Residential Sector, South IITG", lat: 26.1850, lng: 91.6905 }
-];
+let PLACES = [];
+let RECENT_ITEMS = [];
 
-const RECENT_ITEMS = [
-  {
-    from: { name: "Disang Hostel, Footpath surrounding...", sub: "Hostel Zone, IIT Guwahati", lat: 26.1862, lng: 91.6938 },
-    to: { name: "Bhupen Hazarika Auditorium, Footpat...", sub: "Academic Core, IIT Guwahati", lat: 26.18951, lng: 91.7002911 }
-  }
-];
+function toPlace(p) {
+  const kind = p.kind ? p.kind.charAt(0).toUpperCase() + p.kind.slice(1) : "Place";
+  return { name: p.name, sub: `${kind} \u00b7 IIT Guwahati`, lat: p.lat, lng: p.lon };
+}
+
+async function loadPlaces() {
+  try {
+    const d = await (await fetch("/api/places")).json();
+    PLACES = d.places.map(toPlace);
+  } catch (_) { PLACES = []; }
+  try {
+    const d = await (await fetch("/api/demo_pairs")).json();
+    RECENT_ITEMS = d.pairs.slice(0, 3).map((pr) => ({
+      from: { name: `${pr.label}: start`, sub: "Demo route", lat: pr.start[0], lng: pr.start[1] },
+      to: { name: `${pr.label}: end`, sub: "Demo route", lat: pr.end[0], lng: pr.end[1] },
+    }));
+  } catch (_) { RECENT_ITEMS = []; }
+}
+
+const searchCache = new Map();
+async function searchPlaces(q) {
+  const key = q.trim().toLowerCase();
+  if (key.length < 2) return null;
+  if (searchCache.has(key)) return searchCache.get(key);
+  try {
+    const d = await (await fetch(`/api/places/search?q=${encodeURIComponent(key)}&limit=10`)).json();
+    const list = d.results.map(toPlace);
+    searchCache.set(key, list);
+    return list;
+  } catch (_) { return null; }
+}
 
 /* Initialize Leaflet Map */
 const map = L.map("map", { zoomControl: true }).setView([26.1895, 91.6965], 15);
@@ -222,9 +232,31 @@ function syncUIState() {
 }
 
 function setupAutocomplete(inputEl, dropEl, listEl, isSource) {
+  let remote = [];
+  let remoteFor = "";
+  let timer = null;
+
   function findMatchingPlaces(filterText) {
     const q = (filterText || "").trim().toLowerCase();
-    return PLACES.filter((p) => !q || p.name.toLowerCase().includes(q) || p.sub.toLowerCase().includes(q));
+    const local = PLACES.filter((p) => !q || p.name.toLowerCase().includes(q) || p.sub.toLowerCase().includes(q));
+    if (!q || remoteFor !== q) return local.slice(0, 30);
+    const seen = new Set(local.map((p) => p.name.toLowerCase() + "|" + p.lat.toFixed(4)));
+    const extra = remote.filter((p) => !seen.has(p.name.toLowerCase() + "|" + p.lat.toFixed(4)));
+    return local.concat(extra).slice(0, 30);
+  }
+
+  function scheduleRemote(text) {
+    clearTimeout(timer);
+    const q = (text || "").trim().toLowerCase();
+    if (q.length < 2) return;
+    timer = setTimeout(async () => {
+      const list = await searchPlaces(q);
+      if (list && inputEl.value.trim().toLowerCase() === q) {
+        remote = list;
+        remoteFor = q;
+        if (document.activeElement === inputEl) renderList(inputEl.value);
+      }
+    }, 350);
   }
 
   function applyChoice(chosen) {
@@ -271,14 +303,7 @@ function setupAutocomplete(inputEl, dropEl, listEl, isSource) {
   };
   inputEl.oninput = () => {
     renderList(inputEl.value);
-    const matches = findMatchingPlaces(inputEl.value);
-    if (inputEl.value.trim().length >= 2 && matches.length > 0) {
-      const top = matches[0];
-      if (isSource) start = { lat: top.lat, lng: top.lng, label: top.name };
-      else end = { lat: top.lat, lng: top.lng, label: top.name };
-      syncMarkers();
-      syncUIState();
-    }
+    scheduleRemote(inputEl.value);
   };
   inputEl.onkeydown = (e) => {
     if (e.key === "Enter") {
@@ -415,7 +440,12 @@ function renderCards() {
   const safetyTier = safetyPct >= 75 ? "High Safety" : safetyPct >= 55 ? "Moderate Safety" : "Low Safety";
   const safetyColor = safetyPct >= 75 ? "#1E8E3E" : safetyPct >= 55 ? "#F29900" : "#EA4335";
   const timeDiff = Math.round(cur.time_s - fast.time_s);
-  const distKm = (cur.length_m / 1000).toFixed(1);
+  const distKm = (cur.length_m / 1000).toFixed(2);
+  const dd = lastRes.distances || {};
+  const access = Math.round((dd.start_to_road_m || 0) + (dd.end_to_road_m || 0));
+  const distSub = dd.straight_line_m != null
+    ? `Along campus roads \u00b7 ${(dd.straight_line_m / 1000).toFixed(2)} km straight line` + (access >= 20 ? ` \u00b7 +${access} m to/from the road` : "")
+    : "Along campus roads";
   const stretchSaved = Math.round(fast.longest_stretch_m - cur.longest_stretch_m);
   const travelText = travelProfile === "foot" ? "Walk" : "Drive";
 
@@ -470,7 +500,7 @@ function renderCards() {
           <span class="rp-stat-lbl">Est. Distance</span>
         </div>
         <span class="rp-stat-val">${distKm} km</span>
-        <span class="rp-stat-sub" style="color:#9C9284">Actual road distance</span>
+        <span class="rp-stat-sub" style="color:#9C9284">${distSub}</span>
       </div>
 
       <div class="rp-stat-card">
@@ -668,6 +698,7 @@ $("reset").onclick = () => {
 (async () => {
   cfg = await api("/api/config");
   $("params").textContent = `TAU=${cfg.tau} · R=${cfg.r_m} m · Δ=${cfg.delta_m} m`;
+  await loadPlaces();
   setupAutocomplete($("fromInput"), $("fromDropdown"), $("fromList"), true);
   setupAutocomplete($("toInput"), $("toDropdown"), $("toList"), false);
   renderRecent();
