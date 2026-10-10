@@ -51,6 +51,26 @@ the API snaps start/end only inside the largest component.
 - Measured on the IITG graph: 0.01 to 1.0 s per full plan() over 10 random OD pairs (single run each).
 - A verified report applies to every ~30 m fragment of the same physical OSM edge.
 
-## Demo OD pair (cached)
-Start 26.1872635, 91.6957466 -> End 26.18951, 91.7002911, departure 22:00.
-Fastest 12.3 min / longest stretch 571 m; Calmest 14.5 min / longest stretch 83 m.
+## Demo OD pairs (`data/demo_pairs.json`, served at `GET /api/demo_pairs`)
+Written by `python scripts/demo_gate.py` from the committed scenario (v1, seed 20251010), departure 22:00,
+detour budget 1.4x. The longest-stretch values are outputs of that synthetic scenario, not measurements of real streets.
+
+| Pair | Start (lat, lng) | End (lat, lng) | Fastest: time / longest stretch | Calmest: time / longest stretch |
+|---|---|---|---|---|
+| 1 | 26.1871278, 91.6887413 | 26.1870157, 91.6957447 | 13.9 min / 415.1 m | 18.8 min / 27.7 m |
+| 2 | 26.1860109, 91.6915224 | 26.1865201, 91.6957410 | 12.0 min / 476.1 m | 13.7 min / 172.5 m |
+| 3 | 26.1948883, 91.6950284 | 26.1892643, 91.7003392 | 14.8 min / 325.8 m | 19.2 min / 29.8 m |
+| 4 | 26.1961325, 91.6963604 | 26.1908275, 91.6958018 | 12.7 min / 325.8 m | 15.5 min / 53.3 m |
+| 5 | 26.1907354, 91.6868731 | 26.1914732, 91.6913222 | 13.1 min / 200.4 m | 17.3 min / 54.1 m |
+
+The five pairs are the largest reductions found in the sample. They are selected, not typical.
+
+## Measured aggregate (same gate run)
+Of 40 OD pairs with an 8-15 minute fastest walk (sample seed 4242), 28 had no calmer route within the budget,
+7 improved by under 100 m and 5 by 100 m or more. Restricted to the 16 pairs whose fastest route carries a >= 200 m
+stretch, 5 improved by 100 m or more (31.2%); the other 11 had no calmer route.
+
+Concerning share by departure hour: 18:00 21.6%, 20:00 22.7%, 22:00 25.4%, 01:00 37.7%.
+
+Gate checks: hour-22 concerning share must lie in 18-28%; the dark-subset >= 100 m share is compared against a
+**recorded baseline** of 30%, not a target. The script exits non-zero if either check fails.

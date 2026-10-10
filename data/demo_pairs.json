@@ -1,0 +1,127 @@
+{
+  "gate_status": "pass",
+  "scenario_version": "v1",
+  "scenario_seed": 20251010,
+  "sample_seed": 4242,
+  "concerning_pct_by_hour": {
+    "18": 21.6,
+    "20": 22.7,
+    "22": 25.4,
+    "01": 37.7
+  },
+  "all_pairs": {
+    "n": 40,
+    "collapsed": 28,
+    "improved_lt100": 7,
+    "improved_100": 5
+  },
+  "dark_subset": {
+    "min_fastest_longest_stretch_m": 200.0,
+    "n": 16,
+    "collapsed": 11,
+    "improved_lt100": 0,
+    "improved_100": 5
+  },
+  "checks": {
+    "dark_subset_improved_100_share_pct": 31.2,
+    "dark_subset_baseline_pct": 30,
+    "dark_subset_ok": true,
+    "hour22_concerning_band_pct": [
+      18.0,
+      28.0
+    ],
+    "hour22_concerning_ok": true
+  },
+  "pairs": [
+    {
+      "label": "Demo pair 1",
+      "start": [
+        26.1871278,
+        91.6887413
+      ],
+      "end": [
+        26.1870157,
+        91.6957447
+      ],
+      "hour": 22,
+      "fastest_longest_stretch_m": 415.1,
+      "calmest_longest_stretch_m": 27.7,
+      "fastest_time_min": 13.9,
+      "calmest_time_min": 18.8,
+      "scenario_version": "v1",
+      "scenario_seed": 20251010
+    },
+    {
+      "label": "Demo pair 2",
+      "start": [
+        26.1860109,
+        91.6915224
+      ],
+      "end": [
+        26.1865201,
+        91.695741
+      ],
+      "hour": 22,
+      "fastest_longest_stretch_m": 476.1,
+      "calmest_longest_stretch_m": 172.5,
+      "fastest_time_min": 12.0,
+      "calmest_time_min": 13.7,
+      "scenario_version": "v1",
+      "scenario_seed": 20251010
+    },
+    {
+      "label": "Demo pair 3",
+      "start": [
+        26.1948883,
+        91.6950284
+      ],
+      "end": [
+        26.1892643,
+        91.7003392
+      ],
+      "hour": 22,
+      "fastest_longest_stretch_m": 325.8,
+      "calmest_longest_stretch_m": 29.8,
+      "fastest_time_min": 14.8,
+      "calmest_time_min": 19.2,
+      "scenario_version": "v1",
+      "scenario_seed": 20251010
+    },
+    {
+      "label": "Demo pair 4",
+      "start": [
+        26.1961325,
+        91.6963604
+      ],
+      "end": [
+        26.1908275,
+        91.6958018
+      ],
+      "hour": 22,
+      "fastest_longest_stretch_m": 325.8,
+      "calmest_longest_stretch_m": 53.3,
+      "fastest_time_min": 12.7,
+      "calmest_time_min": 15.5,
+      "scenario_version": "v1",
+      "scenario_seed": 20251010
+    },
+    {
+      "label": "Demo pair 5",
+      "start": [
+        26.1907354,
+        91.6868731
+      ],
+      "end": [
+        26.1914732,
+        91.6913222
+      ],
+      "hour": 22,
+      "fastest_longest_stretch_m": 200.4,
+      "calmest_longest_stretch_m": 54.1,
+      "fastest_time_min": 13.1,
+      "calmest_time_min": 17.3,
+      "scenario_version": "v1",
+      "scenario_seed": 20251010
+    }
+  ]
+}

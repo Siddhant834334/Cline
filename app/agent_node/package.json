@@ -1,0 +1,7 @@
+{
+  "name": "fnn-ticket-agent",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "dependencies": { "@cline/sdk": "0.0.92" }
+}

@@ -19,6 +19,10 @@ walkability filter. Re-run `python -m app.generate` afterwards.
 - `/portal`: reviewer portal. Token from `FNN_REVIEWER_TOKEN` (default `demo-reviewer-token`). **Demo auth only.**
 - `/provenance`: dependency ledger. The actual source of every v1 condition value is `synthetic_generator`.
 
+Ticket agent (optional): `cd app/agent_node && npm install` (Node >= 22) plus `ANTHROPIC_API_KEY`. Tickets are then
+drafted by a Cline SDK agent with zero tools; without it they fall back to a direct LLM call, then a template.
+The `drafted_by` field says which path produced each ticket.
+
 Live report extraction: set `ANTHROPIC_API_KEY`. Without it, the demo Hinglish sentence uses a cached response shown with a
 `REPLAY (cached response)` badge; any other text falls back to manual categories.
 
