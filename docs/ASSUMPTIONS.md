@@ -41,6 +41,10 @@ the API snaps start/end only inside the largest component.
 | 14 | Catalog consistency | PASS | tests/test_data.py |
 
 ## Known limitations of the router as built
+- Calmest: L* is an upper bound on the optimum among U-turn-free walks; the bucketing is conservative, so the reported longest stretch is never under-stated.
+- Bucket merging can retain a dominated state: states whose exact (c, g) differ but share a bucket key are merged, and
+  the search keeps whichever arrives first by (time, exposure), not the one with the better continuation, so L* may be
+  larger than the true optimum (never smaller).
 - The product-graph search forbids immediate U-turns on the same edge. If the optimal walk still revisits a node,
   L is stepped upward until a simple path is found and the card is labelled "not proven optimal".
 - Balanced (exposure-minimising) is best among explored states, not exact.

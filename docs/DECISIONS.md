@@ -53,8 +53,9 @@ output of this selected scenario. Different scenario parameters would give diffe
 ## 2. The 600 m cap on L was removed
 
 - **Spec:** cap L at 600 m (C3 settings).
-- **Chosen:** the binary search runs up to the fastest route's own longest stretch, with no cap. `L_CAP_M = 600`
-  in `app/config.py` and the `l_cap` argument of `plan()` still exist but are unused.
+- **Chosen:** the binary search runs up to the fastest route's own longest stretch, with no cap. The cap was removed
+  by decision, not by omission. The leftover `L_CAP_M` setting in `app/config.py` and the `l_cap` parameter of
+  `plan()` had been unused since then, and were deleted so the code no longer suggests a cap applies.
 - **Why:** on the real graph, many fastest routes have a longest stretch above 600 m (one sampled route had
   1,255 m). With the cap, those routes got no Calmest card at all.
 - **Implication:** the spec's bound of 305 states per node no longer holds. Measured timings were 0.01–1.0 s
@@ -70,8 +71,8 @@ output of this selected scenario. Different scenario parameters would give diffe
     simple route shown (not proven optimal)".
 - **Why:** on the real graph, the optimal walk often doubled back along an edge to reset the run counter, so
   most Calmest cards were being discarded.
-- **Implication:** the unlabelled exactness claim is narrower than in the spec. It is "exact to DELTA among
-  walks without immediate U-turns", not over all walks. Labelled cards claim no optimality, and the stepped
+- **Implication:** the unlabelled claim is weaker than the spec's "exact to DELTA". It now reads: "L* is an upper bound on the optimum among U-turn-free walks; the bucketing is conservative, so the reported longest stretch is never under-stated."
+  Bucket merging can keep a dominated state, so tightness is not guaranteed (see `ASSUMPTIONS.md`). Labelled cards claim no optimality, and the stepped
   search is not proven to find the best simple path.
 
 ## 4. `CAMPUS_MEMBER_ACCESS = True`

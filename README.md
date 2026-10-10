@@ -25,7 +25,7 @@ Live report extraction: set `ANTHROPIC_API_KEY`. Without it, the demo Hinglish s
 ## How routing works
 - **Fastest**: Dijkstra on walk time. Defines the budget B = time x 1.4.
 - **Calmest**: product graph over (node, concerning-metres bucket, good-metres bucket). Binary search on the bound L,
-  with feasibility = min-time path within B. Exact to a 10 m discretisation (conservative direction).
+  with feasibility = min-time path within B. L* is an upper bound on the optimum among U-turn-free walks; the bucketing is conservative, so the reported longest stretch is never under-stated.
 - **Balanced**: minimises concerning metres under the L* bound and budget. Best among generated candidates, not exact.
 - Unknown segments are pessimistic, count as concerning and never break a stretch.
 

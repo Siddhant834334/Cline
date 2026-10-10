@@ -11,7 +11,6 @@ SCENARIO = DATA / "scenario_v1.json"
 TAU = 0.5
 R_M = 40.0
 DELTA_M = 10.0
-L_CAP_M = 600.0
 DETOUR_FACTOR = 1.4
 WALK_SPEED_MPS = 1.25
 SPLIT_M = 30.0

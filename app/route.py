@@ -168,7 +168,7 @@ def _reasons(net, card, fast):
     return codes
 
 
-def plan(net, s, t, detour=config.DETOUR_FACTOR, l_cap=config.L_CAP_M):
+def plan(net, s, t, detour=config.DETOUR_FACTOR):
     if s not in net.adj or t not in net.adj:
         return {"status": "unreachable", "reason": "endpoint_not_on_eligible_graph", "cards": []}
     fr = fastest(net, s, t)
@@ -203,7 +203,7 @@ def plan(net, s, t, detour=config.DETOUR_FACTOR, l_cap=config.L_CAP_M):
     if best is not None:
         l_star, (cn, ce, _) = best
         calm = metrics(net, cn, ce)
-        claim = f"minimal longest continuous stretch within budget, exact to {net.delta:g} m buckets"
+        claim = "L* is an upper bound on the optimum among U-turn-free walks; the bucketing is conservative, so the reported longest stretch is never under-stated."
         if relaxed_from is not None:
             claim = f"optimal walk revisited a node at bound {relaxed_from:g} m; next feasible simple route shown (not proven optimal)"
         calm.update(name="calmest", l_bound_m=l_star, relaxed_from_m=relaxed_from, claim=claim)
