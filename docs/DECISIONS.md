@@ -280,3 +280,21 @@ earlier scenario.
   "Unnamed <type> near <street>" so a street name is never shown as a place name.
 - **Limit:** coverage is whatever OSM volunteers have mapped around IITG. Missing or mis-tagged buildings will be
   missing or wrong here too. This is not "every place on the internet", and no commercial geocoder is used.
+
+### 23a. Google Places added as the first source
+
+- **Chosen (team decision):** `/api/places/search` tries Google Places API (New) Text Search first
+  (`app/google_places.py`), restricted with `locationRestriction.rectangle` to the same campus bbox. Then Nominatim,
+  then the stored OSM tiles. The response's `source` and `attribution` say which one answered.
+- **Key handling:** `GOOGLE_PLACES_API_KEY` is read on the server and sent in the `X-Goog-Api-Key` header. It never
+  reaches the browser and is not in the URL. Without a key, Google is skipped entirely.
+- **Field mask:** only id, name, address, location and type are requested, which keeps each call in a lower
+  pricing tier. Results outside the campus bbox and results without a name are dropped.
+- **Caching:** successful results are cached in memory (cleared on restart). Responses that came from a fallback
+  because a source errored are not cached, so the next query retries Google.
+- **Not verified with a real key** in the build sandbox. A real request with a dummy key returned
+  `400 INVALID_ARGUMENT: API key not valid`, which confirms the request shape is accepted, and the app fell back
+  to Nominatim as designed.
+- **Terms to check (team):** Google's Maps Platform terms restrict showing Places content alongside non-Google
+  maps, and our map uses Leaflet with CARTO/OSM tiles. Attribution "Place results from Google" is returned with
+  every Google response. Whether that is sufficient, or the map must change, has not been checked.

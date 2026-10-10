@@ -204,7 +204,6 @@ def places_search(q: str = "", limit: int = 8):
     for p in res["results"]:
         p["snapped"] = _snap(p["lat"], p["lon"])
     res["bbox"] = list(places.BBOX)
-    res["attribution"] = "Data (c) OpenStreetMap contributors, ODbL. Search by Nominatim."
     return res
 
 

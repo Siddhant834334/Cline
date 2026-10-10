@@ -4,7 +4,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
-from . import config
+from . import config, google_places
 
 BBOX = (26.1795, 91.6830, 26.2010, 91.7060)
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
@@ -107,7 +107,19 @@ def _fetch(q, limit):
     return out
 
 
-def search(q, limit=8, fetch=None):
+ATTRIBUTION = {
+    "google": google_places.ATTRIBUTION,
+    "nominatim": "Data (c) OpenStreetMap contributors, ODbL. Search by Nominatim.",
+    "osm_tiles": "Data (c) OpenStreetMap contributors, ODbL.",
+    "none": "",
+}
+
+
+def _google(q, limit):
+    return google_places.search(q, limit, BBOX, in_bbox)
+
+
+def search(q, limit=8, fetch=None, google=None, google_on=None):
     q = " ".join((q or "").split())[:100]
     limit = max(1, min(int(limit), 20))
     if len(q) < 2:
@@ -115,17 +127,35 @@ def search(q, limit=8, fetch=None):
     key = (q.lower(), limit)
     if key in _cache:
         return _cache[key]
-    try:
-        results = (fetch or _fetch)(q, limit)
-        res = {"query": q, "results": results, "source": "nominatim"}
-        if not results:
-            local = search_local(q, limit)
-            if local:
-                res = {"query": q, "results": local, "source": "osm_tiles"}
+    notes = []
+    use_google = google_places.enabled() if google_on is None else google_on
+    res = None
+    if use_google:
+        try:
+            hits = (google or _google)(q, limit)
+            if hits:
+                res = {"query": q, "results": hits, "source": "google"}
+            else:
+                notes.append("google returned no campus results")
+        except Exception as e:
+            notes.append(f"google unavailable ({type(e).__name__})")
+    if res is None:
+        try:
+            hits = (fetch or _fetch)(q, limit)
+            res = {"query": q, "results": hits, "source": "nominatim"}
+            if not hits:
+                local = search_local(q, limit)
+                if local:
+                    res = {"query": q, "results": local, "source": "osm_tiles"}
+        except Exception as e:
+            notes.append(f"nominatim unavailable ({type(e).__name__})")
+            res = {"query": q, "results": search_local(q, limit), "source": "osm_tiles"}
+    if notes:
+        res["note"] = "; ".join(notes)
+    res["attribution"] = ATTRIBUTION[res["source"]]
+    transient = any("unavailable" in n for n in notes)
+    if not transient:
         if len(_cache) >= CACHE_MAX:
             _cache.clear()
         _cache[key] = res
-        return res
-    except Exception as e:
-        return {"query": q, "results": search_local(q, limit), "source": "osm_tiles",
-                "note": f"live search unavailable ({type(e).__name__}); offline OSM names shown"}
+    return res
