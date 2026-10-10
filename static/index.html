@@ -5,7 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Dusk — Safety-Aware Navigation</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" />
   <link rel="stylesheet" href="/style.css?v=13" />
+  <link rel="stylesheet" href="/night.css?v=1" />
 </head>
 <body>
 
@@ -76,8 +80,13 @@
         </div>
         <div>
           <h1 class="brand-h1">Dusk</h1>
-          <p class="brand-sub">Safety-Aware Navigation</p>
+          <p class="brand-sub">Night walking routes that keep dark stretches short</p>
           <p class="brand-mode" id="profileLabel">Driving routes</p>
+          <div class="badges">
+            <span class="badge">Simulated conditions</span>
+            <span class="badge">Departure-time snapshot</span>
+          </div>
+          <p class="params-line" id="paramsLine"></p>
         </div>
       </div>
 
@@ -91,7 +100,7 @@
             <div class="step-bar-seg" id="sbar2"></div>
             <div class="step-bar-seg" id="sbar3"></div>
           </div>
-          <p class="step-label" id="stepCaption"><strong>Step 1</strong> of 3 &mdash; Set your starting point</p>
+          <p class="step-label" id="stepCaption">Pick a start and an end on the map, or choose a demo route below.</p>
         </div>
 
         <!-- Connected FROM / TO Box with Live Autocomplete -->
@@ -149,6 +158,13 @@
           </div>
         </div>
 
+        <div class="demo-wrap" id="demoWrap" hidden>
+          <label class="demo-label" for="demoSelect">Demo routes</label>
+          <select id="demoSelect" class="demo-select">
+            <option value="">Choose a demo route</option>
+          </select>
+        </div>
+
         <!-- Departure Time & Extra Time Card -->
         <div class="facts-wrap" id="timeBudgetWrap">
           <div class="time-budget-card">
@@ -198,7 +214,7 @@
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
             </svg>
-            <span id="goLabel">Compute Safe Route</span>
+            <span id="goLabel">Find routes</span>
           </button>
           <button id="reset" hidden>Reset</button>
           <div id="status" class="muted" style="margin-top:6px;text-align:center"></div>
@@ -238,7 +254,7 @@
   <div id="drawer" class="inspector-modal" hidden></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="/map.js?v=10"></script>
+  <script src="/map.js?v=11"></script>
   <script src="/report.js?v=10"></script>
 </body>
 </html>

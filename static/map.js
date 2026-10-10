@@ -64,9 +64,9 @@ async function searchPlaces(q) {
 
 /* Initialize Leaflet Map */
 const map = L.map("map", { zoomControl: true }).setView([26.1895, 91.6965], 15);
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-  maxZoom: 19
+L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  maxZoom: 20
 }).addTo(map);
 
 let cfg = {};
@@ -81,6 +81,63 @@ let travelProfile = "driving";
 
 const baseLayer = L.layerGroup().addTo(map);
 const routeLayer = L.layerGroup().addTo(map);
+
+const CSS_FALLBACK = { "--lit": "#F2B45C", "--dim": "#5E6B85", "--unlit": "#1E2333", "--unknown": "#8A919E", "--closed": "#C8CDD8", "--focus": "#9CC2FF" };
+const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || CSS_FALLBACK[name] || "#888";
+
+function riskColor(r, st) {
+  if (st === "no_data") return cssVar("--unknown");
+  const tau = cfg.tau ?? 0.5;
+  if (r > tau) return cssVar("--unlit");
+  if (r > tau * 0.6) return cssVar("--dim");
+  return cssVar("--lit");
+}
+
+function riskClass(r, st) {
+  if (st === "no_data") return "unknown";
+  const tau = cfg.tau ?? 0.5;
+  if (r > tau) return "unlit";
+  if (r > tau * 0.6) return "dim";
+  return "lit";
+}
+
+const RISK_WORD = { lit: "Lit, below threshold", dim: "Dim, below threshold", unlit: "Concerning, above threshold", unknown: "No data, counted as concerning" };
+
+function polylineMetres(ll) {
+  let d = 0;
+  for (let i = 1; i < ll.length; i++) {
+    const [a1, o1] = ll[i - 1], [a2, o2] = ll[i];
+    const p1 = a1 * Math.PI / 180, p2 = a2 * Math.PI / 180;
+    const h = Math.sin((p2 - p1) / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin((o2 - o1) * Math.PI / 360) ** 2;
+    d += 2 * 6371008.8 * Math.asin(Math.sqrt(h));
+  }
+  return d;
+}
+
+function withLengths(card) {
+  const raw = card.geometry.map((g) => polylineMetres(g.ll));
+  const sum = raw.reduce((a, b) => a + b, 0) || 1;
+  const k = card.length_m / sum;
+  return card.geometry.map((g, i) => ({ ...g, length_m: raw[i] * k }));
+}
+
+function longestRun(geometry) {
+  const R = cfg.r_m ?? 40;
+  let c = 0, g = 0, runStart = -1, best = 0, bestStart = -1, bestEnd = -1;
+  geometry.forEach((s, i) => {
+    const len = s.length_m;
+    if (s.conc) {
+      if (c === 0) runStart = i;
+      c += len;
+      g = 0;
+      if (c > best) { best = c; bestStart = runStart; bestEnd = i; }
+    } else if (c > 0) {
+      g += len;
+      if (g >= R - 1e-9) { c = 0; g = 0; }
+    }
+  });
+  return { length: best, start: bestStart, end: bestEnd };
+}
 
 function lumaHeatColor(safetyScore) {
   const t = Math.max(0, Math.min(1, safetyScore));
@@ -156,23 +213,21 @@ async function loadNetwork() {
   const net = await api(`/api/network?hour=${hourVal() % 24}`);
   baseLayer.clearLayers();
   for (const s of net.segments) {
-    const safety = s.st === "no_data" ? 0.25 : Math.max(0.05, 1 - s.r);
-    const pct = Math.round(safety * 100);
-    const col = s.closed ? "#171b5e" : lumaHeatColor(safety);
+    const col = s.closed ? cssVar("--closed") : riskColor(s.r, s.st);
     const line = L.polyline(s.ll, {
       color: col,
       weight: s.closed ? 4.5 : 3,
-      opacity: s.closed ? 0.9 : 0.62,
+      opacity: s.closed ? 0.9 : 0.8,
       lineCap: "round",
-      dashArray: s.closed ? "4 6" : null
+      dashArray: s.closed ? "4 6" : s.st === "no_data" ? "3 5" : null
     });
-    line.bindTooltip(`<div>Safety: <b>${pct}%</b></div>`, {
+    line.bindTooltip(`<div>Risk <b>${s.r.toFixed(2)}</b> \u00b7 ${s.closed ? "Closed by a verified event" : RISK_WORD[riskClass(s.r, s.st)]}</div>`, {
       className: "luma-tooltip",
       direction: "top",
       sticky: true
     });
     line.on("mouseover", function () { this.setStyle({ weight: 5, opacity: 0.9 }); });
-    line.on("mouseout", function () { this.setStyle({ weight: s.closed ? 4.5 : 3, opacity: s.closed ? 0.9 : 0.62 }); });
+    line.on("mouseout", function () { this.setStyle({ weight: s.closed ? 4.5 : 3, opacity: s.closed ? 0.9 : 0.8 }); });
     line.on("click", (e) => {
       L.DomEvent.stopPropagation(e);
       openDrawer(s.id);
@@ -199,11 +254,11 @@ function syncUIState() {
   $("sbar3").className = "step-bar-seg " + (step === 3 ? "done" : "");
 
   if (step === 1) {
-    $("stepCaption").innerHTML = `<strong>Step 1</strong> of 3 &mdash; Set your starting point`;
+    $("stepCaption").textContent = "Pick a start and an end on the map, or choose a demo route below.";
   } else if (step === 2) {
-    $("stepCaption").innerHTML = `<strong>Step 2</strong> of 3 &mdash; Choose your destination`;
+    $("stepCaption").textContent = "Now pick where you are going.";
   } else {
-    $("stepCaption").innerHTML = `<strong>Step 3</strong> of 3 &mdash; Search your route`;
+    $("stepCaption").textContent = "Ready. Find routes to compare how long each one stays in the dark.";
   }
 
   if (placing && !hasRoutes) {
@@ -216,7 +271,7 @@ function syncUIState() {
   }
 
   $("go").disabled = !(start && end);
-  $("goLabel").textContent = hasRoutes ? "Update Route" : "Compute Safe Route";
+  $("goLabel").textContent = hasRoutes ? "Update routes" : "Find routes";
 
   $("sidebar").className = hasRoutes ? "docked-mode" : "floating-mode";
   $("stepSection").hidden = hasRoutes;
@@ -382,7 +437,8 @@ map.on("click", async (e) => {
 
 async function findRoutes() {
   if (!start || !end) return;
-  $("goLabel").textContent = "Computing routes…";
+  $("goLabel").textContent = "Finding routes\u2026";
+  ribbonAnimated = false;
   try {
     lastRes = await api("/api/route", {
       method: "POST",
@@ -395,7 +451,7 @@ async function findRoutes() {
       })
     });
   } catch (e) {
-    $("status").textContent = "Error: " + e.message;
+    $("status").textContent = "Routing failed: " + e.message;
     syncUIState();
     return;
   }
@@ -403,11 +459,42 @@ async function findRoutes() {
   renderCards();
 }
 
+let ribbonAnimated = false;
+let hoverLayer = null;
+
+function wireRibbons(res) {
+  document.querySelectorAll(".rb").forEach((el) => {
+    const card = res.cards[+el.dataset.card];
+    const g = card.geometry[+el.dataset.seg];
+    const on = () => {
+      if (hoverLayer) map.removeLayer(hoverLayer);
+      hoverLayer = L.polyline(g.ll, { color: cssVar("--focus"), weight: 10, opacity: 0.95, lineCap: "round" }).addTo(map);
+      hoverLayer.bindTooltip(el.getAttribute("aria-label"), { className: "luma-tooltip", permanent: true, direction: "top" }).openTooltip();
+    };
+    const off = () => { if (hoverLayer) { map.removeLayer(hoverLayer); hoverLayer = null; } };
+    el.addEventListener("mouseenter", on);
+    el.addEventListener("focus", on);
+    el.addEventListener("mouseleave", off);
+    el.addEventListener("blur", off);
+    el.addEventListener("click", () => openDrawer(g.id));
+    el.addEventListener("keydown", (e) => {
+      const sibs = [...el.parentElement.children];
+      const i = sibs.indexOf(el);
+      if (e.key === "ArrowRight" && sibs[i + 1]) { e.preventDefault(); sibs[i + 1].focus(); }
+      if (e.key === "ArrowLeft" && sibs[i - 1]) { e.preventDefault(); sibs[i - 1].focus(); }
+    });
+  });
+  document.querySelectorAll(".ribbon").forEach((rb) => {
+    const bands = [...rb.children];
+    bands.forEach((b, i) => { b.tabIndex = i === 0 ? 0 : -1; });
+  });
+}
+
 function renderCards() {
   const res = lastRes;
   routeLayer.clearLayers();
   if (!res || res.status !== "ok" || !res.cards.length) {
-    $("status").textContent = res ? `Unreachable: ${res.reason}` : "";
+    $("status").textContent = res ? "These two points are not connected by any mapped walking route. Try points closer to a campus road." : "";
     syncUIState();
     return;
   }
@@ -434,117 +521,92 @@ function renderCards() {
 
   const cur = res.cards.find((c) => c.name === active) || res.cards[0];
   const fast = res.cards.find((c) => c.name === "fastest" || (c.also && c.also.includes("fastest"))) || res.cards[0];
-  const m = MODE_CONFIG[cur.name] || MODE_CONFIG.calmest;
 
-  const safetyPct = cur.length_m > 0 ? Math.max(8, Math.round(((cur.length_m - cur.concerning_m) / cur.length_m) * 100)) : 85;
-  const safetyTier = safetyPct >= 75 ? "High Safety" : safetyPct >= 55 ? "Moderate Safety" : "Low Safety";
-  const safetyColor = safetyPct >= 75 ? "#1E8E3E" : safetyPct >= 55 ? "#F29900" : "#EA4335";
-  const timeDiff = Math.round(cur.time_s - fast.time_s);
-  const distKm = (cur.length_m / 1000).toFixed(2);
   const dd = lastRes.distances || {};
   const access = Math.round((dd.start_to_road_m || 0) + (dd.end_to_road_m || 0));
   const distSub = dd.straight_line_m != null
     ? `Along campus roads \u00b7 ${(dd.straight_line_m / 1000).toFixed(2)} km straight line` + (access >= 20 ? ` \u00b7 +${access} m to/from the road` : "")
     : "Along campus roads";
-  const stretchSaved = Math.round(fast.longest_stretch_m - cur.longest_stretch_m);
-  const travelText = travelProfile === "foot" ? "Walk" : "Drive";
+  const fastLongest = fast.longest_stretch_m;
+  const ordered = [...res.cards].sort((x, y) => ["fastest", "calmest", "balanced"].indexOf(x.name) - ["fastest", "calmest", "balanced"].indexOf(y.name));
+  const noCalmer = !res.cards.some((c) => c.name === "calmest" || (c.also || []).includes("calmest")) || res.cards.length === 1;
 
-  const aiText = cur.name === "calmest"
-    ? `Prioritizes well-lit, low-risk roads. Avg safety: ${safetyPct}%. Caps longest dark stretch to ${Math.round(cur.longest_stretch_m)} m. Recommended for night travel.`
-    : cur.name === "fastest"
-    ? `Quickest path (${fmtMin(cur.time_s)}) but passes a ${Math.round(cur.longest_stretch_m)} m dark stretch. Switch to Safest for stronger protection.`
-    : `Balanced: keeps longest dark stretch under ${Math.round(cur.longest_stretch_m)} m while keeping ${safetyPct}% safety — a smart everyday choice.`;
+  const cardHtml = (c, idx) => {
+    const mc = MODE_CONFIG[c.name] || MODE_CONFIG.calmest;
+    const names = [c.name, ...(c.also || [])].map((n) => (MODE_CONFIG[n] || {}).label || n).join(" and ");
+    const geo = withLengths(c);
+    const total = geo.reduce((a, g) => a + g.length_m, 0) || 1;
+    const run = longestRun(geo);
+    let acc = 0, runL = 0, runW = 0;
+    const bands = geo.map((g, i) => {
+      const w = (g.length_m / total) * 100;
+      if (i === run.start) runL = acc;
+      if (i >= run.start && i <= run.end && run.start >= 0) runW += w;
+      acc += w;
+      const cls = riskClass(g.r, g.st);
+      const tip = `Segment ${i + 1} of ${geo.length}, ${Math.round(g.length_m)} m. Risk ${g.r.toFixed(2)}. ${RISK_WORD[cls]}.`;
+      return `<button type="button" class="rb rb-${cls}" style="flex-basis:${w.toFixed(4)}%" data-card="${idx}" data-seg="${i}" aria-label="${tip}" title="${tip}"></button>`;
+    }).join("");
+    const delta = Math.round(c.longest_stretch_m - fastLongest);
+    const isFast = c.name === "fastest" || (c.also || []).includes("fastest");
+    const deltaTxt = isFast ? "Reference route" : delta === 0 ? "Same as fastest" : `${delta < 0 ? "\u2212" : "+"}${Math.abs(delta)} m vs fastest`;
+    const timeDiff = Math.round((c.time_s - fast.time_s) / 60);
+    return `
+      <article class="rcard${c.name === active ? " sel" : ""}" data-name="${c.name}" style="--accent:${mc.color};--i:${idx}" aria-label="${names} route">
+        <header class="rcard-head">
+          <h3 class="rcard-title">${names}</h3>
+          <button type="button" class="rcard-pick" data-m="${c.name}" aria-pressed="${c.name === active}">${c.name === active ? "Shown on map" : "Show on map"}</button>
+        </header>
+        <p class="rcard-claim muted">${c.claim}</p>
+        <div class="hero">
+          <span class="hero-num">${Math.round(c.longest_stretch_m)}</span><span class="hero-unit">m</span>
+          <span class="hero-cap">longest continuous concerning stretch</span>
+          <span class="hero-delta${!isFast && delta < 0 ? " better" : ""}">${deltaTxt}</span>
+        </div>
+        <div class="ribbon-wrap">
+          <div class="ribbon" role="group" aria-label="Journey from start to end, ${geo.length} segments">${bands}</div>
+          ${run.start >= 0 ? `<div class="run-mark" style="left:${runL.toFixed(3)}%;width:${Math.max(runW, 0.6).toFixed(3)}%" aria-hidden="true"></div>
+          <div class="run-label" style="left:${runL.toFixed(3)}%">${Math.round(c.longest_stretch_m)} m</div>` : `<div class="run-none">No concerning stretch on this route</div>`}
+        </div>
+        <div class="ribbon-ends"><span>Start</span><span>End</span></div>
+        <table class="rmetrics">
+          <tr><td>Walk time</td><td>${fmtMin(c.time_s)}${timeDiff > 0 ? ` (+${timeDiff} min)` : ""}</td></tr>
+          <tr><td>Distance</td><td>${(c.length_m / 1000).toFixed(2)} km</td></tr>
+          <tr><td>Total concerning</td><td>${Math.round(c.concerning_m)} m</td></tr>
+          <tr><td>Max single-segment risk</td><td>${c.max_segment_risk.toFixed(2)}</td></tr>
+          <tr><td>Unknown (no data)</td><td>${Math.round(c.unknown_m)} m</td></tr>
+          <tr><td>Data coverage</td><td>${c.coverage == null ? "\u2013" : Math.round(c.coverage * 100) + "%"}</td></tr>
+        </table>
+        <p class="rcard-codes">${c.reason_codes.join(" \u00b7 ")}</p>
+      </article>`;
+  };
 
   $("cards").innerHTML = `
     <div class="rp-header">
-      <div class="rp-title-group">
-        <div class="rp-icon-badge" style="background:${m.color}18;color:${m.color}">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg>
-        </div>
-        <div>
-          <h2 class="rp-h2">${m.label} &middot; ${travelText}</h2>
-          <p class="rp-sub">Safety analysis for your selected path</p>
-        </div>
+      <div>
+        <h2 class="rp-h2">Route comparison</h2>
+        <p class="rp-sub">${distSub}. Departure ${hh(hourVal(), minuteVal())}, simulated conditions.</p>
       </div>
-      <button class="sec" id="simHazardBtn" style="font-size:11.5px;padding:5px 11px">Report / Test Hazard on Route</button>
+      <button class="sec" id="simHazardBtn">Report a hazard on this route</button>
     </div>
-
-    <div class="rp-stats-row">
-      <div class="rp-stat-card">
-        <div class="rp-stat-top">
-          <div class="rp-stat-ico" style="background:#E8F0FE;color:#1A73E8">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/></svg>
-          </div>
-          <span class="rp-stat-lbl">Travel Time</span>
-        </div>
-        <span class="rp-stat-val">${fmtMin(cur.time_s)}</span>
-        <span class="rp-stat-sub" style="color:${timeDiff > 0 ? "#F29900" : "#1E8E3E"}">${timeDiff > 0 ? `+${timeDiff}s vs fastest` : "Shortest possible"}</span>
-      </div>
-
-      <div class="rp-stat-card">
-        <div class="rp-stat-top">
-          <div class="rp-stat-ico" style="background:${safetyColor}18;color:${safetyColor}">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg>
-          </div>
-          <span class="rp-stat-lbl">Safety Score</span>
-        </div>
-        <span class="rp-stat-val">${safetyPct}%</span>
-        <span class="rp-stat-sub" style="color:${safetyColor}">${safetyTier}</span>
-      </div>
-
-      <div class="rp-stat-card">
-        <div class="rp-stat-top">
-          <div class="rp-stat-ico" style="background:#F0EBE2;color:#6B6259">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M21 3L3 10.53v.98l6.84 2.65L12.48 21h.98L21 3z"/></svg>
-          </div>
-          <span class="rp-stat-lbl">Est. Distance</span>
-        </div>
-        <span class="rp-stat-val">${distKm} km</span>
-        <span class="rp-stat-sub" style="color:#9C9284">${distSub}</span>
-      </div>
-
-      <div class="rp-stat-card">
-        <div class="rp-stat-top">
-          <div class="rp-stat-ico" style="background:${m.color}18;color:${m.color}">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
-          </div>
-          <span class="rp-stat-lbl">${cur.name === "fastest" ? "Safety Tradeoff" : "Safety Gain"}</span>
-        </div>
-        <span class="rp-stat-val">${cur.name === "fastest" ? "—" : `-${stretchSaved} m`}</span>
-        <span class="rp-stat-sub" style="color:${cur.name === "fastest" ? "#EA4335" : m.color}">${cur.name === "fastest" ? "Switch to Safest for protection" : "shorter dark stretch vs fastest"}</span>
-      </div>
-    </div>
-
-    <div class="rp-level-wrap">
-      <div class="rp-level-head">
-        <span class="rp-level-lbl">Route Safety Level</span>
-        <span style="font-size:10.5px;font-weight:700;color:${m.color}">${safetyPct}% safe</span>
-      </div>
-      <div class="rp-level-track">
-        <div class="rp-level-fill" style="width:${safetyPct}%;background:linear-gradient(90deg, ${safetyColor}80, ${m.color})"></div>
-      </div>
-      <div class="rp-level-ticks">
-        <span style="color:#EA4335">Low</span>
-        <span style="color:#F29900">Moderate</span>
-        <span style="color:#1E8E3E">High</span>
-      </div>
-    </div>
-
-    <div class="rp-eval-box" style="border-color:${m.color}40">
-      <div style="display:flex;gap:10px;align-items:flex-start">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="${m.color}" style="flex-shrink:0;margin-top:2px">
-          <path d="M19 3l-1.4 3.1L14.5 7.5l3.1 1.4L19 12l1.4-3.1L23.5 7.5l-3.1-1.4L19 3zm-7 3L8.5 12.5 2 16l6.5 3.5L12 26l3.5-6.5L22 16l-6.5-3.5L12 6z"/>
-        </svg>
-        <div>
-          <p style="font-size:11px;color:#1A73E8;font-weight:800;text-transform:uppercase;letter-spacing:0.02em;margin-bottom:3px">AI Evaluation</p>
-          <p style="font-size:11.5px;color:#3C4043;font-weight:500;line-height:1.5">${aiText}</p>
-        </div>
-      </div>
-      <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;flex-shrink:0">
-        ${cur.reason_codes.map((rc) => `<span class="hl-pill">${rc}</span>`).join("")}
-      </div>
+    ${noCalmer ? `<p class="no-calmer">No calmer route fits the time budget. The fastest route is already the calmest option within ${Math.round((+$("detour").value - 1) * 100)}% extra time.</p>` : ""}
+    <div class="rcards">${ordered.map((c) => cardHtml(c, res.cards.indexOf(c))).join("")}</div>
+    <div class="legend" aria-label="Ribbon legend">
+      <span><i class="lg lg-lit"></i>Lit</span><span><i class="lg lg-dim"></i>Dim</span>
+      <span><i class="lg lg-unlit"></i>Concerning (risk above ${cfg.tau})</span><span><i class="lg lg-unknown"></i>No data</span>
+      <span><i class="lg lg-run"></i>Longest run</span>
     </div>
   `;
+
+  document.querySelectorAll(".rcard-pick").forEach((b) => {
+    b.onclick = () => { sel = b.dataset.m; renderCards(); };
+  });
+  wireRibbons(res);
+  if (!ribbonAnimated) {
+    ribbonAnimated = true;
+    $("cards").classList.add("wipe");
+    setTimeout(() => $("cards").classList.remove("wipe"), 1600);
+  }
 
   $("simHazardBtn").onclick = () => {
     const seg = cur.geometry.find((g) => !g.conc) || cur.geometry[0];
@@ -556,7 +618,6 @@ function renderCards() {
   for (const c of order) {
     const isSel = c.name === active;
     const mCfg = MODE_CONFIG[c.name] || MODE_CONFIG.calmest;
-    const cSafePct = c.length_m > 0 ? Math.max(8, Math.round(((c.length_m - c.concerning_m) / c.length_m) * 100)) : 85;
     for (const g of c.geometry) {
       if (isSel) boundsPts.push(...g.ll);
       const line = L.polyline(g.ll, {
@@ -569,9 +630,8 @@ function renderCards() {
       });
       line.bindTooltip(
         `<div style="display:flex;flex-direction:column;gap:2px">
-          <span style="font-weight:600;color:${mCfg.color}">${mCfg.label} &middot; ${travelText}</span>
-          <span>ETA: ${fmtMin(c.time_s)}</span>
-          <span>Safety: ${cSafePct}%</span>
+          <span style="font-weight:600">${mCfg.label}</span>
+          <span>${fmtMin(c.time_s)} \u00b7 longest concerning stretch ${Math.round(c.longest_stretch_m)} m</span>
         </div>`,
         { className: "luma-tooltip", direction: "top", sticky: true }
       );
@@ -685,6 +745,36 @@ $("detour").onchange = () => {
   if (start && end && lastRes) findRoutes();
 };
 
+async function setupDemoPicker() {
+  let pairs = [];
+  try {
+    const r = await fetch("/api/demo_pairs");
+    if (r.ok) pairs = (await r.json()).pairs || [];
+  } catch (_) { pairs = []; }
+  if (!pairs.length) { $("demoWrap").hidden = true; return; }
+  const fmt = (m) => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`);
+  $("demoSelect").innerHTML = `<option value="">Choose a demo route</option>` + pairs.map((p, i) =>
+    `<option value="${i}">${p.label}: longest dark stretch ${fmt(p.fastest_longest_stretch_m)} on the fastest route</option>`).join("");
+  $("demoWrap").hidden = false;
+  $("demoSelect").onchange = () => {
+    const v = $("demoSelect").value;
+    if (v === "") return;
+    const p = pairs[+v];
+    start = { lat: p.start[0], lng: p.start[1], label: `${p.label}: start` };
+    end = { lat: p.end[0], lng: p.end[1], label: `${p.label}: end` };
+    $("fromInput").value = start.label;
+    $("toInput").value = end.label;
+    $("hour").value = hh(p.hour, 0);
+    if ($("hourv")) $("hourv").textContent = hh(p.hour, 0);
+    placing = null;
+    syncMarkers();
+    syncUIState();
+    map.fitBounds([p.start, p.end], { padding: [80, 80], maxZoom: 16 });
+    loadNetwork();
+    findRoutes();
+  };
+}
+
 $("go").onclick = findRoutes;
 $("reset").onclick = () => {
   start = end = lastRes = null;
@@ -698,10 +788,12 @@ $("reset").onclick = () => {
 (async () => {
   cfg = await api("/api/config");
   $("params").textContent = `TAU=${cfg.tau} · R=${cfg.r_m} m · Δ=${cfg.delta_m} m`;
+  $("paramsLine").textContent = `TAU ${cfg.tau} \u00b7 R ${cfg.r_m} m \u00b7 \u0394 ${cfg.delta_m} m \u00b7 no data counts as concerning`;
   await loadPlaces();
   setupAutocomplete($("fromInput"), $("fromDropdown"), $("fromList"), true);
   setupAutocomplete($("toInput"), $("toDropdown"), $("toList"), false);
   renderRecent();
+  setupDemoPicker();
 
   $("profileLabel").textContent = "Driving routes";
   placing = "source";
