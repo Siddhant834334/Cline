@@ -49,12 +49,14 @@ def field_table(con, hour, at):
     return table
 
 
-def build_net(con, segments, depart, tau=config.TAU, r_m=config.R_M, delta=config.DELTA_M):
+def build_net(con, segments, depart, tau=config.TAU, r_m=config.R_M, delta=config.DELTA_M, with_events=True):
     hour = scenario_hour(depart)
     table = field_table(con, hour, depart)
-    events = active_events(con, depart)
+    events = active_events(con, depart) if with_events else []
     overrides, closed, ev_by_seg = {}, set(), {}
     for ev in events:
+        if ev["event_type"] == "repair":
+            continue
         sids = json.loads(ev["segment_ids"])
         for sid in sids:
             ev_by_seg.setdefault(sid, []).append(ev["event_id"])
@@ -99,3 +101,12 @@ def segment_detail(net, sid):
         else:
             fields.append({"field": k, "value": None, "source": None, "missing": True})
     return fields
+
+
+def plan_with_reasons(con, segments, depart, s, t, detour=config.DETOUR_FACTOR):
+    from .route import plan, add_event_reasons
+    net = build_net(con, segments, depart)
+    res = plan(net, s, t, detour=detour)
+    if net.events:
+        add_event_reasons(res, plan(build_net(con, segments, depart, with_events=False), s, t, detour=detour), net)
+    return net, res

@@ -230,3 +230,22 @@ def plan(net, s, t, detour=config.DETOUR_FACTOR, l_cap=config.L_CAP_M):
         c["reason_codes"] = _reasons(net, c, fast)
     return {"status": "ok", "budget_s": budget, "l_star_m": l_star, "cards": out, "dropped": dropped,
             "tau": net.tau, "r_m": net.r_m, "delta_m": net.delta}
+
+
+def add_event_reasons(res, baseline, net):
+    if res.get("status") != "ok" or baseline.get("status") != "ok":
+        return res
+    base = {}
+    for c in baseline["cards"]:
+        for n in [c["name"]] + c.get("also", []):
+            base[n] = set(c["edges"])
+    for c in res["cards"]:
+        mine = set(c["edges"])
+        for n in [c["name"]] + c.get("also", []):
+            for e in base.get(n, ()):
+                if e not in mine:
+                    for ev in net.events.get(e, ()):
+                        code = f"AVOIDS_EVENT:{ev}"
+                        if code not in c["reason_codes"]:
+                            c["reason_codes"].append(code)
+    return res

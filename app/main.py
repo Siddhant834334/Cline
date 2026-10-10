@@ -1,0 +1,183 @@
+import json
+from typing import Optional
+from fastapi import FastAPI, HTTPException, Header
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+from . import config, db, reports
+from .conditions import build_net, segment_detail, scenario_departure, plan_with_reasons
+from .extract import ValidationError
+from .graph import load_segments, nearest_node, components
+from .route import plan
+
+app = FastAPI(title="Fear-Free Night Navigator")
+STATIC = config.ROOT / "static"
+con = db.connect()
+SEGMENTS = load_segments()
+SEG_INDEX = {s["segment_id"]: i for i, s in enumerate(SEGMENTS)}
+MAIN_COMPONENT = set(components(SEGMENTS)[0])
+BASE_DATE = json.loads(config.SCENARIO.read_text())["base_date"]
+
+
+def auth(token):
+    if token != f"Bearer {config.REVIEWER_TOKEN}":
+        raise HTTPException(401, "reviewer auth required (demo bearer token)")
+
+
+def depart_at(hour, minute=0):
+    return scenario_departure(BASE_DATE, hour, minute)
+
+
+class RouteReq(BaseModel):
+    start: list[float]
+    end: list[float]
+    hour: int = 22
+    minute: int = 0
+    detour: float = config.DETOUR_FACTOR
+
+
+class DraftReq(BaseModel):
+    text: str
+    segment_id: str
+
+
+class SubmitReq(BaseModel):
+    idempotency_key: str
+    text: str
+    segment_id: str
+    category: str
+    extraction_mode: str
+    extraction_confidence: Optional[float] = None
+    session: Optional[str] = None
+
+
+class ReviewReq(BaseModel):
+    report_id: str
+    hour: Optional[int] = None
+
+
+class RollbackReq(BaseModel):
+    event_id: str
+
+
+@app.get("/api/health")
+def health():
+    return {"ok": True, "segments": len(SEGMENTS)}
+
+
+@app.get("/api/config")
+def get_config():
+    return {"tau": config.TAU, "r_m": config.R_M, "delta_m": config.DELTA_M, "detour": config.DETOUR_FACTOR,
+            "base_date": BASE_DATE, "unknown_counts_as_concerning": True}
+
+
+@app.get("/api/network")
+def network(hour: int = 22):
+    net = build_net(con, SEGMENTS, depart_at(hour))
+    return {"segments": [{"id": s["segment_id"], "ll": s["lonlat"], "r": round(net.risk[i], 3),
+                          "st": net.status[i], "closed": s["segment_id"] in net.closed}
+                         for i, s in enumerate(SEGMENTS)]}
+
+
+def _card(net, c):
+    out = {k: v for k, v in c.items() if k not in ("nodes", "edges")}
+    out["geometry"] = [{"id": SEGMENTS[e]["segment_id"], "ll": SEGMENTS[e]["lonlat"], "r": round(net.risk[e], 3),
+                        "st": net.status[e], "conc": net.conc[e]} for e in c["edges"]]
+    return out
+
+
+@app.post("/api/route")
+def route(req: RouteReq):
+    dep = depart_at(req.hour, req.minute)
+    s = nearest_node(SEGMENTS, req.start[0], req.start[1], MAIN_COMPONENT)
+    t = nearest_node(SEGMENTS, req.end[0], req.end[1], MAIN_COMPONENT)
+    net, res = plan_with_reasons(con, SEGMENTS, dep, s, t, req.detour)
+    res["cards"] = [_card(net, c) for c in res["cards"]]
+    res.update(departure=dep.isoformat(), snapshot="departure-time snapshot", conditions="simulated")
+    return res
+
+
+@app.get("/api/segment/{sid}")
+def segment(sid: str, hour: int = 22):
+    if sid not in SEG_INDEX:
+        raise HTTPException(404, "unknown segment")
+    net = build_net(con, SEGMENTS, depart_at(hour))
+    i = SEG_INDEX[sid]
+    return {"segment_id": sid, "risk": net.risk[i], "status": net.status[i], "coverage": net.coverage[i],
+            "length_m": SEGMENTS[i]["length_m"], "parent_way_id": SEGMENTS[i]["parent_way_id"],
+            "access": SEGMENTS[i]["pedestrian_access"], "closed": sid in net.closed,
+            "events": net.events.get(i, []), "fields": segment_detail(net, sid)}
+
+
+def guarded(fn):
+    try:
+        return fn()
+    except ValidationError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/report/draft")
+def report_draft(req: DraftReq):
+    return guarded(lambda: reports.draft(con, req.text, req.segment_id))
+
+
+@app.post("/api/report/submit")
+def report_submit(req: SubmitReq):
+    def go():
+        r, created = reports.submit(con, req.idempotency_key, req.text, req.segment_id, req.category,
+                                    req.extraction_mode, req.extraction_confidence, req.session)
+        return {"report": r, "created": created}
+    return guarded(go)
+
+
+@app.get("/api/review/reports")
+def review_list(authorization: str = Header(None)):
+    auth(authorization)
+    return {"reports": reports.list_reports(con), "events": reports.list_events(con)}
+
+
+def _when(req):
+    return depart_at(req.hour) if req.hour is not None else None
+
+
+@app.post("/api/review/verify")
+def review_verify(req: ReviewReq, authorization: str = Header(None)):
+    auth(authorization)
+    return guarded(lambda: {"event_id": reports.verify(con, req.report_id, "demo_reviewer", _when(req))})
+
+
+@app.post("/api/review/repair")
+def review_repair(req: ReviewReq, authorization: str = Header(None)):
+    auth(authorization)
+    return guarded(lambda: {"event_id": reports.repair(con, req.report_id, "demo_reviewer", _when(req))})
+
+
+@app.post("/api/review/reject")
+def review_reject(req: ReviewReq, authorization: str = Header(None)):
+    auth(authorization)
+    return guarded(lambda: reports.reject(con, req.report_id, "demo_reviewer") or {"ok": True})
+
+
+@app.post("/api/review/rollback")
+def review_rollback(req: RollbackReq, authorization: str = Header(None)):
+    auth(authorization)
+    return guarded(lambda: reports.rollback(con, req.event_id, "demo_reviewer") or {"ok": True})
+
+
+@app.get("/api/provenance")
+def provenance():
+    return {"actual_source_v1": "synthetic_generator",
+            "catalog": [dict(r) for r in con.execute("SELECT * FROM collection_catalog")]}
+
+
+@app.get("/portal")
+def portal():
+    return FileResponse(STATIC / "portal.html")
+
+
+@app.get("/provenance")
+def provenance_page():
+    return FileResponse(STATIC / "provenance.html")
+
+
+app.mount("/", StaticFiles(directory=STATIC, html=True), name="static")
