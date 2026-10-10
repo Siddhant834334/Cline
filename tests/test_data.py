@@ -32,3 +32,23 @@ def test_catalog_consistency(tmp_path):
         assert False
     except AssertionError as e:
         assert "institutional" in str(e)
+
+
+def test_demo_pairs_file_contract():
+    import json
+    from app import config
+    d = json.loads((config.DATA / "demo_pairs.json").read_text())
+    assert d["gate_status"] in ("pass", "fail")
+    for k in ("concerning_pct_by_hour", "all_pairs", "dark_subset", "checks"):
+        assert k in d
+    assert set(d["concerning_pct_by_hour"]) == {"18", "20", "22", "01"}
+    assert d["pairs"] and all({"label", "start", "end", "hour", "fastest_longest_stretch_m",
+                                "calmest_longest_stretch_m"} <= set(p) for p in d["pairs"])
+
+
+def test_demo_pairs_endpoint_503_when_missing(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main, config
+    monkeypatch.setattr(config, "DATA", tmp_path)
+    r = TestClient(main.app).get("/api/demo_pairs")
+    assert r.status_code == 503 and "demo_pairs.json" in r.json()["detail"]

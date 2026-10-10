@@ -173,7 +173,7 @@ def demo_route_segments():
     if not path.exists():
         return []
     out = []
-    for p in json.loads(path.read_text()):
+    for p in json.loads(path.read_text())["pairs"]:
         dep = depart_at(p["hour"])
         s = nearest_node(SEGMENTS, p["start"][0], p["start"][1], MAIN_COMPONENT)
         t = nearest_node(SEGMENTS, p["end"][0], p["end"][1], MAIN_COMPONENT)
@@ -193,7 +193,7 @@ def review_ticket(req: TicketReq, authorization: str = Header(None)):
 def demo_pairs():
     path = config.DATA / "demo_pairs.json"
     if not path.exists():
-        raise HTTPException(404, "data/demo_pairs.json missing; run scripts/demo_gate.py")
+        raise HTTPException(503, "demo pairs unavailable: data/demo_pairs.json is missing; run python scripts/demo_gate.py")
     return json.loads(path.read_text())
 
 
