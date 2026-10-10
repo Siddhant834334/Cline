@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+data/graph_cache.pkl
+data/fnn.db
+data/photos/
+.pytest_cache/
+.env
+data/osm_cache/
