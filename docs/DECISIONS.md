@@ -200,3 +200,39 @@ output of this selected scenario. Different scenario parameters would give diffe
 
 Parameters and acceptance-check results: [`ASSUMPTIONS.md`](ASSUMPTIONS.md). TAU, R, DELTA, DETOUR_FACTOR,
 UNKNOWN_DEFAULT and the staleness ramp are configured values in `app/config.py`. None has been validated.
+
+---
+
+## 21. Cline SDK spike and the ticket flow (fallback mode)
+
+- **Spike outcome:** `@cline/sdk` 0.0.92 (Node >= 22; sandbox Node 24) installed and ran, but the trivial agent call
+  failed with "Anthropic API key is missing", because no key exists in the build environment. Details in
+  `CLINE_LOG.md`. Judged a fail at about one minute in, so no debugging time was spent.
+- **Chosen:** ticket drafting built in fallback mode, as the spec prescribes. `app/ticket.py` makes at most one
+  direct LLM call (`app/ticket_text.py`, same provider and model as extraction, section 9). There is no
+  `app/agent_node/` and no Cline SDK at runtime. Every ticket carries
+  `drafted_by: "cline-authored module (SDK integration not run)"`.
+- **Gap filled: what happens when the LLM call fails or its output fails the schema.** The spec gave no rule.
+  Chosen: fall back to a deterministic English and Hindi template built only from database facts, and append
+  `"; LLM unavailable, deterministic template text"` to `drafted_by`, so a template ticket is never mistaken
+  for model output. In this environment every ticket takes this path, because there is no key.
+- **Strict schema (enforced in Python):** exactly the keys `body_en` and `body_hi`; non-empty strings of at most
+  1,200 characters; `body_hi` must contain Devanagari. Anything else is rejected and never stored.
+- **Gap filled: which reports can get a ticket.** Only reports in state `verified` or `fixed` with a linked
+  condition event. Accepted or rejected reports return 400.
+- **Idempotency:** one ticket per `report_id`, enforced by a UNIQUE constraint. A repeat call returns the stored
+  ticket and does not redraft it.
+- **`delivered`:** always 0, enforced by a `CHECK (delivered = 0)` constraint in the `ticket` table. Nothing is
+  sent anywhere. Every response carries `disclosure: "demo outbox - not delivered to any authority"`.
+- **Gap filled: affected-route count.** The number of cards (fastest, calmest, balanced, after merging) planned
+  for the pairs in `data/demo_pairs.json` whose segments overlap the event's segments. It counts demo routes
+  only, not real walkers. That file does not exist until `scripts/demo_gate.py` passes, so the count is
+  currently 0 for every ticket.
+- **Gap filled: location text.** "near <lat>, <lon> on OSM way <id>", from the segment midpoint. No street names
+  are invented.
+- **Gap filled: outage duration.** Hours from the event's `starts_at` to the moment of drafting, measured on the
+  server clock. Events verified with a scenario-clock `hour` can therefore show durations that do not match the
+  scenario.
+- **Gap filled: extra fields.** The response also returns `report_id`, `event_id`, `other_reports_on_segment` and
+  `created_at`, beyond the fields the spec listed.
+- **Outbox:** `data/outbox/<report_id>.json` is git-ignored, demo state only.

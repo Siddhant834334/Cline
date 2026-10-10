@@ -1,0 +1,1 @@
+{ "name": "cline-sdk-spike", "private": true, "type": "module", "dependencies": { "@cline/sdk": "0.0.92" } }
